@@ -1,12 +1,7 @@
-import pandas as pd
-import numpy as np
 from sklearn.ensemble import IsolationForest
-from adjustText import adjust_text
 from sklearn.preprocessing import MinMaxScaler
-import matplotlib.pyplot as plt
 from datetime import datetime
 import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
 from pathlib import Path
 
 
@@ -14,10 +9,20 @@ class ChampionDetection:
 
     def __init__(self, database):
         self.database = database
-        self.output_dir = Path(__file__).parent.parent / 'PltOutput' / 'PerformanceScore' / datetime.today().date().strftime("%y_%m_%d")
+        self.today_date = datetime.today().date().strftime("%y_%m_%d")
+        self.output_dir = Path(__file__).parent.parent / 'PltOutput' / 'PerformanceScore' / self.today_date
         self.output_dir.mkdir(exist_ok=True, parents=True)
 
-    def isolation_forest(self):
+
+    def performance_score(self):
+        """
+        승률, 픽률, 밴률, 챔피언 티어 기반 performance score하위 10개 챔피언 탐지
+        그래도 같은 라인 챔피언을 선택한 경우임
+        완전 말도 안되는 챔피언 픽이 아닌 구린 챔피언을 픽한 경우를 나타냄
+        완전 말도 안되는 챔피언 픽 탐지가 필요한 경우
+            1. 다른 라인 챔피언을 선택한 경우,
+            2. 다른 라인 챔피언 + performance score 가 구린 경우
+        """
         df = self.database.get_champion_df("top")
         features = ['pick_rate', 'win_rate', 'ban_rate', 'champion_tier']
         X = df[features].copy()
@@ -50,7 +55,7 @@ class ChampionDetection:
         result.loc[weak_idx,'is_outlier'] = is_outlier_mask
         result.loc[weak_idx,'anomaly_score'] = anomaly_score
 
-        self.draw_scatter(result,f"top")
+        self.draw_performance_scatter(result, "top")
         weak_outliers = result[result['is_outlier']].nlargest(10, 'anomaly_score')
         print("\n=== 성능이 특히 낮은 챔피언 ===")
         for _, row in weak_outliers.iterrows():
@@ -64,7 +69,7 @@ class ChampionDetection:
             print()
         return weak_outliers
 
-    def draw_scatter(self, result, title):
+    def draw_performance_scatter(self, result, line):
         plt.figure(figsize=(10, 6))
         plt.rc('font', family='Malgun Gothic')
         plt.scatter(
@@ -91,12 +96,12 @@ class ChampionDetection:
                 fontsize=9,
                 alpha=0.8
             )
-        plt.xlabel('Performance Score (픽률, 승률, 밴률, 티어)')
+        plt.xlabel('Performance Score (픽률, 승률, 밴률, 티어의 종합 점수)')
         plt.ylabel('이상치 점수')
-        plt.title('Performance Score 기반 챔피언 이상치 탐지 10개')
+        plt.title(f'Performance Score 하위 10 이상치 챔피언, 라인:{line}, 날짜:{self.today_date}')
         plt.legend()
         plt.grid(True, alpha=0.3)
-        plt.savefig(self.output_dir/f'{title}.png',
+        plt.savefig(self.output_dir/f'{line}.png',
                     bbox_inches='tight',
                     dpi=300,
                     facecolor='white')
