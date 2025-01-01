@@ -18,9 +18,15 @@ class OracleElixirDownloader:
         csv = pd.read_csv(url,dtype={'url': 'str'})
         return csv
 
-    def save_all_db(self):
+    def save_to_db(self):
         df = self.read_csv()
         df = df.rename(columns={'year':'game_year','date':'game_date','dragons (type unknown)':'dragons_type_unknown', 'team kpm':'team_kpm', 'earned gpm':'earned_gpm', 'total cs':'total_cs'})
+        position_mapping = {
+            'sup': 'support',
+            'jng': 'jungle',
+            'bot': 'bottom'
+        }
+        df['position'] = df['position'].replace(position_mapping)
         self.database.insert_oracle_elixir(df)
 
 
