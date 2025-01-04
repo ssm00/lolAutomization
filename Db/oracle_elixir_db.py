@@ -226,15 +226,25 @@ class Database:
             position_champions[position] = pd.read_sql(query, self.connection)['name_us'].tolist()
         return position_champions
 
-    def get_match_info(self, patch):
+    def get_player_info(self, patch):
         select_query = f"""
-        SELECT gameid, position, playername, champion, teamname
+        SELECT gameid, position, playername, champion, teamname, side
         FROM oracle_elixir 
         WHERE position != 'team'
         AND patch = {patch}
+        ORDER BY gameid, side
         """
         match_info = pd.read_sql(select_query, self.connection)
         return match_info
+
+    def get_team_info(self):
+        select_query = """
+        select * 
+        from oracle_elixir
+        where position = "team"
+        order by gameid, game_date
+        """
+        return pd.read_sql(select_query, self.connection)
 
     def get_pick_rate_info(self, patch):
         position_champions = {}
@@ -254,4 +264,11 @@ class Database:
             }
         return position_champions
 
-
+    def get_only_bottom_champion(self, patch):
+        select_query = f"""
+        select name_us
+        from champion_score_bottom cb
+        where patch = {patch}
+        and cb.name_us not in (select name_us from champion_score_mid)
+        """
+        return pd.read_sql(select_query, self.connection)['name_us'].tolist()
