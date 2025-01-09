@@ -60,7 +60,7 @@ class ChampionDetection:
 
                 for pick in adc_picks:
                     game_info['adc_picks'].append({
-                        'champion': pick.champion,
+                        'champion': pick.name_us,
                         'position': pick.position,
                         'player': pick.playername
                     })
@@ -100,6 +100,9 @@ class ChampionDetection:
 
             pick_info = {
                 'gameid': row['gameid'],
+                'league': row['league'],
+                'set': row['game'],
+                'result': row['result'],
                 'player': row['playername'],
                 'team': row['teamname'],
                 'position': position,
@@ -121,6 +124,9 @@ class ChampionDetection:
             print("=" * 50)
             for pick in unusual_picks:
                 print(f"게임 ID: {pick['gameid']}")
+                print(f"리그: {pick['league']}")
+                print(f"세트: {pick['set']}")
+                print(f"결과: {pick['result']}")
                 print(f"플레이어: {pick['player']} ({pick['team']})")
                 print(f"포지션: {pick['position']}")
                 print(f"선택한 챔피언: {pick['name_us']}")
@@ -135,7 +141,7 @@ class ChampionDetection:
         x = match_df[features].copy()
         scaler = MinMaxScaler()
         x_scaled = scaler.fit_transform(x)
-        isolation_forest = IsolationForest(contamination=0.2, random_state=42, n_estimators=100)
+        isolation_forest = IsolationForest(contamination=0.1, random_state=42, n_estimators=200)
         outliers = isolation_forest.fit_predict(x_scaled)
         anomaly_score = -isolation_forest.score_samples(x_scaled)
 
