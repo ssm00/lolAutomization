@@ -163,13 +163,12 @@ class ChampionDetection:
         """
         for line in self.line_list:
             df = self.database.get_champion_score(line, self.patch)
-            features = ['pick_rate', 'win_rate', 'ban_rate', 'champion_tier']
+            features = ['pick_rate', 'win_rate', 'ban_rate']
             X = df[features].copy()
             performance_score = (
-                    X['pick_rate'] * 0.3 +
-                    X['win_rate'] * 0.3 +
-                    X['ban_rate'] * 0.2 +
-                    (1 / X['champion_tier']) * 0.2
+                    X['pick_rate'] +
+                    X['win_rate'] +
+                    X['ban_rate']
             )
             median_score = performance_score.median()
             weak_idx = performance_score < median_score
@@ -178,7 +177,7 @@ class ChampionDetection:
             scaler = MinMaxScaler()
             X_scaled = scaler.fit_transform(X_weak)
             iso_forest = IsolationForest(
-                contamination=0.2,
+                contamination=0.1,
                 random_state=42,
                 n_estimators=100,
             )
@@ -222,9 +221,9 @@ class ChampionDetection:
                 fontsize=9,
                 alpha=0.8
             )
-        plt.xlabel('Performance Score (픽률, 승률, 밴률, 티어의 종합 점수)')
+        plt.xlabel('Performance Score (픽률, 승률, 밴률의 종합 점수)')
         plt.ylabel('이상치 점수')
-        plt.title(f'Performance Score 하위 10 이상치 챔피언, 라인:{line}, 날짜:{self.today_date}')
+        plt.title(f'Performance Score 하위 10% 이상치 챔피언, 라인:{line}, 날짜:{self.today_date}')
         plt.legend()
         plt.grid(True, alpha=0.3)
         output_path = self.output_dir / 'PerformanceScore' / self.today_date
@@ -798,13 +797,17 @@ class ChampionDetection:
 
     def draw_gold_series(self, game_id, player_name, line):
         plt.style.use('seaborn-v0_8-dark')
-        # 폰트 설정 - 한글 지원을 위해
         plt.rcParams['font.family'] = 'NanumGothic'  # 한글 폰트 설정
         plt.rcParams['axes.unicode_minus'] = False  # 마이너스 기호 깨짐 방지
+        plt.rcParams['text.color'] = 'white'  # 기본 텍스트 색상
+        plt.rcParams['axes.labelcolor'] = 'white'  # 축 레이블 색상
+        plt.rcParams['xtick.color'] = 'white'  # x축 눈금 색상
+        plt.rcParams['ytick.color'] = 'white'  # y축 눈금 색상
 
         # 데이터 준비
         series_info = self.database.get_match_series_info(game_id, player_name)
-        opp_player_name = self.database.get_oppnent_player_name(game_id, player_name)
+        champion_name = series_info["name_kr"][0]
+        opp_champion_name = self.database.get_oppnent_player_name(game_id, player_name).get("name_kr")
         select_columns = [
             "goldat10", "opp_goldat10", "golddiffat10",
             "goldat15", "opp_goldat15", "golddiffat15",
@@ -812,6 +815,7 @@ class ChampionDetection:
             "goldat25", "opp_goldat25", "golddiffat25"
         ]
         df = series_info[select_columns].copy()
+
         # 시간대별 데이터 추출
         time_points = [10, 15, 20, 25]
         player_gold = []
@@ -830,14 +834,16 @@ class ChampionDetection:
         fig, ax = plt.subplots(figsize=(12, 7), dpi=100)
 
         # 배경 스타일링
-        ax.set_facecolor('#f8f9fa')  # 밝은 회색 배경
-        fig.patch.set_facecolor('white')
+        ax.set_facecolor('#1a1a1a')  # 어두운 배경
+        fig.patch.set_facecolor('#1a1a1a')
 
         # 골드 라인 그리기
         player_line = ax.plot(valid_times, player_gold, '-', color='#1E40AF',
-                              linewidth=3, marker='o', markersize=8, label=f'플레이어({player_name}) 골드')
+                              linewidth=3, marker='o', markersize=8,
+                              label=f'플레이어({champion_name}) 골드')
         opp_line = ax.plot(valid_times, opponent_gold, '-', color='#DC2626',
-                           linewidth=3, marker='o', markersize=8, label=f'상대({opp_player_name}) 골드')
+                           linewidth=3, marker='o', markersize=8,
+                           label=f'상대({opp_champion_name}) 골드')
 
         # 골드 차이 영역 표시
         ax.fill_between(valid_times, player_gold, opponent_gold,
@@ -851,13 +857,15 @@ class ChampionDetection:
         ax.grid(True, linestyle='--', alpha=0.3, color='gray')
 
         # 축 레이블 및 제목 설정
-        ax.set_title(f'{line} 시간대별 골드 획득', pad=20, fontsize=14, fontweight='bold')
-        ax.set_xlabel('게임 시간 (분)', labelpad=10, fontsize=12)
-        ax.set_ylabel('골드 (K)', labelpad=10, fontsize=12)
+        ax.set_title(f'시간대별 골드 획득', pad=20, fontsize=24,
+                     fontweight='bold', color='white')
+        ax.set_xlabel('게임 시간 (분)', labelpad=10, fontsize=22, color='white')
+        ax.set_ylabel('골드 (K)', labelpad=10, fontsize=22, color='white')
 
         # x축 설정
         ax.set_xticks(valid_times)
-        ax.set_xticklabels([f'{t}분' for t in valid_times])
+        ax.set_xticklabels([f'{t}분' for t in valid_times], fontsize=20, color='white')
+        ax.tick_params(axis='y', labelsize=20)
 
         # y축 범위 설정 (여백 10% 추가)
         all_gold = player_gold + opponent_gold
@@ -869,9 +877,17 @@ class ChampionDetection:
         # y축 단위 포맷팅
         ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{int(x)}K'))
 
-        # 범례 스타일링
-        ax.legend(loc='upper left', frameon=True, fancybox=True,
-                  shadow=True, bbox_to_anchor=(0.02, 0.98))
+        # 범례 스타일링 - 배경색과 텍스트 색상 조정
+        legend = ax.legend(loc='upper left', frameon=True,
+                           bbox_to_anchor=(0.02, 0.98),
+                           fontsize=20)
+        frame = legend.get_frame()
+        frame.set_facecolor('#1a1a1a')  # 범례 배경색을 그래프 배경색과 동일하게
+        frame.set_edgecolor('white')  # 테두리 색상
+
+        # 범례 텍스트 색상 변경
+        for text in legend.get_texts():
+            text.set_color('white')
 
         # 그래프 테두리 제거
         for spine in ['top', 'right']:
@@ -881,10 +897,10 @@ class ChampionDetection:
         for i, (pg, og) in enumerate(zip(player_gold, opponent_gold)):
             ax.annotate(f'{pg:.1f}K', (valid_times[i], pg),
                         textcoords="offset points", xytext=(0, 10),
-                        ha='center', color='#1E40AF')
+                        ha='center', color='white', fontsize=18)
             ax.annotate(f'{og:.1f}K', (valid_times[i], og),
-                        textcoords="offset points", xytext=(0, 10),
-                        ha='center', color='#DC2626')
+                        textcoords="offset points", xytext=(0, 10),  # 겹치지 않도록 위치 조정
+                        ha='center', color='white', fontsize=18)
 
         # 레이아웃 조정
         plt.tight_layout()
