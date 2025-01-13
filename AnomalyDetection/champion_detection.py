@@ -806,8 +806,8 @@ class ChampionDetection:
 
         # 데이터 준비
         series_info = self.database.get_match_series_info(game_id, player_name)
-        champion_name = series_info["name_kr"][0]
-        opp_champion_name = self.database.get_oppnent_player_name(game_id, player_name).get("name_kr")
+        champion_name = series_info["name_us"][0]
+        opp_champion_name = self.database.get_oppnent_player_name(game_id, player_name).get("name_us")
         select_columns = [
             "goldat10", "opp_goldat10", "golddiffat10",
             "goldat15", "opp_goldat15", "golddiffat15",
@@ -908,6 +908,139 @@ class ChampionDetection:
         output_path = self.output_dir / 'Series' / 'PickRate' / self.today_date
         output_path.mkdir(exist_ok=True, parents=True)
 
+        plt.savefig(
+            output_path / f'{game_id}_{player_name}_gold.png',
+            bbox_inches='tight',
+            dpi=300,
+            transparent=True
+        )
+        plt.close()
+
+    def draw_gold_series(self, game_id, player_name, line):
+        plt.style.use('seaborn-v0_8-dark')
+        plt.rcParams['font.family'] = 'NanumGothic'  # 한글 폰트 설정
+        plt.rcParams['axes.unicode_minus'] = False  # 마이너스 기호 깨짐 방지
+        plt.rcParams['text.color'] = 'white'  # 기본 텍스트 색상
+        plt.rcParams['axes.labelcolor'] = 'white'  # 축 레이블 색상
+        plt.rcParams['xtick.color'] = 'white'  # x축 눈금 색상
+        plt.rcParams['ytick.color'] = 'white'  # y축 눈금 색상
+
+        # 데이터 준비
+        series_info = self.database.get_match_series_info(game_id, player_name)
+        champion_name = series_info["name_us"][0]
+        opp_champion_name = self.database.get_oppnent_player_name(game_id, player_name).get("name_us")
+        select_columns = {
+            "goldat":[
+                "goldat10", "opp_goldat10", "golddiffat10",
+                "goldat15", "opp_goldat15", "golddiffat15",
+                "goldat20", "opp_goldat20", "golddiffat20",
+                "goldat25", "opp_goldat25", "golddiffat25"],
+            "xpat":[
+                "xpat10", "opp_xpat10", "xpdiffat10",
+                "xpat15", "opp_xpat15", "xpdiffat15",
+                "xpat20", "opp_xpat20", "xpdiffat20",
+                "xpat25", "opp_xpat25", "xpdiffat25"],
+            "csat":[
+                "csat10", "opp_csat10", "csdiffat10",
+                "csat15", "opp_csat15", "csdiffat15",
+                "csat20", "opp_csat20", "csdiffat20",
+                "csat25", "opp_csat25", "csdiffat25"],
+            "killsat": [
+                "killsat10", "opp_killsat10",
+                "killsat15", "opp_killsat15",
+                "killsat20", "opp_killsat20",
+                "killsat25", "opp_killsat25"],
+            "assistsat": [
+                "assistsat10", "opp_assistsat10",
+                "assistsat15", "opp_assistsat15",
+                "assistsat20", "opp_assistsat20",
+                "assistsat25", "opp_assistsat25"],
+            "deathsat": [
+                "deathsat10", "opp_deathsat10",
+                "deathsat15", "opp_deathsat15",
+                "deathsat20", "opp_deathsat20",
+                "deathsat25", "opp_deathsat25", ],
+        }
+        df = series_info[select_columns].copy()
+        
+        self.draw_series(champion_name, df, game_id, opp_champion_name, player_name)
+
+    def draw_series(self, champion_name, df, game_id, opp_champion_name, player_name):
+        # 시간대별 데이터 추출
+        time_points = [10, 15, 20, 25]
+        player_gold = []
+        opponent_gold = []
+        valid_times = []
+        for time in time_points:
+            gold_val = df[f'goldat{time}'].iloc[0]
+            opp_gold_val = df[f'opp_goldat{time}'].iloc[0]
+
+            if pd.notna(gold_val) and pd.notna(opp_gold_val):
+                player_gold.append(gold_val / 1000)
+                opponent_gold.append(opp_gold_val / 1000)
+                valid_times.append(time)
+        fig, ax = plt.subplots(figsize=(12, 7), dpi=100)
+        # 배경 스타일링
+        ax.set_facecolor('#1a1a1a')  # 어두운 배경
+        fig.patch.set_facecolor('#1a1a1a')
+        # 골드 라인 그리기
+        player_line = ax.plot(valid_times, player_gold, '-', color='#1E40AF',
+                              linewidth=3, marker='o', markersize=8,
+                              label=f'({champion_name}) 골드')
+        opp_line = ax.plot(valid_times, opponent_gold, '-', color='#DC2626',
+                           linewidth=3, marker='o', markersize=8,
+                           label=f'({opp_champion_name}) 골드')
+        # 골드 차이 영역 표시
+        ax.fill_between(valid_times, player_gold, opponent_gold,
+                        where=(np.array(player_gold) >= np.array(opponent_gold)),
+                        color='#1E40AF', alpha=0.1)
+        ax.fill_between(valid_times, player_gold, opponent_gold,
+                        where=(np.array(player_gold) <= np.array(opponent_gold)),
+                        color='#DC2626', alpha=0.1)
+        # 격자 스타일링
+        ax.grid(True, linestyle='--', alpha=0.3, color='gray')
+        # 축 레이블 및 제목 설정
+        ax.set_title(f'시간대별 골드 획득', pad=20, fontsize=24,
+                     fontweight='bold', color='white')
+        ax.set_xlabel('게임 시간 (분)', labelpad=10, fontsize=22, color='white')
+        ax.set_ylabel('골드 (K)', labelpad=10, fontsize=22, color='white')
+        # x축 설정
+        ax.set_xticks(valid_times)
+        ax.set_xticklabels([f'{t}분' for t in valid_times], fontsize=20, color='white')
+        ax.tick_params(axis='y', labelsize=20)
+        # y축 범위 설정 (여백 10% 추가)
+        all_gold = player_gold + opponent_gold
+        min_gold = min(all_gold)
+        max_gold = max(all_gold)
+        padding = (max_gold - min_gold) * 0.1
+        ax.set_ylim(min_gold - padding, max_gold + padding)
+        # y축 단위 포맷팅
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{int(x)}K'))
+        # 범례 스타일링 - 배경색과 텍스트 색상 조정
+        legend = ax.legend(loc='upper left', frameon=True,
+                           bbox_to_anchor=(0.02, 0.98),
+                           fontsize=20)
+        frame = legend.get_frame()
+        frame.set_facecolor('#1a1a1a')  # 범례 배경색을 그래프 배경색과 동일하게
+        frame.set_edgecolor('white')  # 테두리 색상
+        # 범례 텍스트 색상 변경
+        for text in legend.get_texts():
+            text.set_color('white')
+        # 그래프 테두리 제거
+        for spine in ['top', 'right']:
+            ax.spines[spine].set_visible(False)
+        # 데이터 포인트에 값 표시
+        for i, (pg, og) in enumerate(zip(player_gold, opponent_gold)):
+            ax.annotate(f'{pg:.1f}K', (valid_times[i], pg),
+                        textcoords="offset points", xytext=(0, 10),
+                        ha='center', color='white', fontsize=18)
+            ax.annotate(f'{og:.1f}K', (valid_times[i], og),
+                        textcoords="offset points", xytext=(0, 10),  # 겹치지 않도록 위치 조정
+                        ha='center', color='white', fontsize=18)
+        # 레이아웃 조정
+        plt.tight_layout()
+        output_path = self.output_dir / 'Series' / 'PickRate' / self.today_date
+        output_path.mkdir(exist_ok=True, parents=True)
         plt.savefig(
             output_path / f'{game_id}_{player_name}_gold.png',
             bbox_inches='tight',
