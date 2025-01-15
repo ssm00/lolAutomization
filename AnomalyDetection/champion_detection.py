@@ -916,135 +916,732 @@ class ChampionDetection:
         )
         plt.close()
 
-    def draw_gold_series(self, game_id, player_name, line):
+    def draw_all_series(self, game_id, player_name):
+        # 각 통계 항목별 설정
+        metrics_config = {
+            "goldat": {
+                "title": "시간대별 골드 획득",
+                "ylabel": "골드 (K)",
+                "format": lambda x: f"{x / 1000:.1f}K",
+                "div_factor": 1000,
+                "columns": ["goldat", "opp_goldat"]
+            },
+            "xpat": {
+                "title": "시간대별 경험치 획득",
+                "ylabel": "경험치",
+                "format": lambda x: f"{x:.0f}",
+                "div_factor": 1,
+                "columns": ["xpat", "opp_xpat"]
+            },
+            "csat": {
+                "title": "시간대별 CS 획득",
+                "ylabel": "CS",
+                "format": lambda x: f"{x:.0f}",
+                "div_factor": 1,
+                "columns": ["csat", "opp_csat"]
+            },
+            "killsat": {
+                "title": "시간대별 킬 획득",
+                "ylabel": "킬",
+                "format": lambda x: f"{x:.0f}",
+                "div_factor": 1,
+                "columns": ["killsat", "opp_killsat"]
+            },
+            "assistsat": {
+                "title": "시간대별 어시스트 획득",
+                "ylabel": "어시스트",
+                "format": lambda x: f"{x:.0f}",
+                "div_factor": 1,
+                "columns": ["assistsat", "opp_assistsat"]
+            },
+            "deathsat": {
+                "title": "시간대별 데스",
+                "ylabel": "데스",
+                "format": lambda x: f"{x:.0f}",
+                "div_factor": 1,
+                "columns": ["deathsat", "opp_deathsat"]
+            }
+        }
+
+        # 기본 스타일 설정
         plt.style.use('seaborn-v0_8-dark')
-        plt.rcParams['font.family'] = 'NanumGothic'  # 한글 폰트 설정
-        plt.rcParams['axes.unicode_minus'] = False  # 마이너스 기호 깨짐 방지
-        plt.rcParams['text.color'] = 'white'  # 기본 텍스트 색상
-        plt.rcParams['axes.labelcolor'] = 'white'  # 축 레이블 색상
-        plt.rcParams['xtick.color'] = 'white'  # x축 눈금 색상
-        plt.rcParams['ytick.color'] = 'white'  # y축 눈금 색상
+        plt.rcParams['font.family'] = 'NanumGothic'
+        plt.rcParams['axes.unicode_minus'] = False
+        plt.rcParams['text.color'] = 'white'
+        plt.rcParams['axes.labelcolor'] = 'white'
+        plt.rcParams['xtick.color'] = 'white'
+        plt.rcParams['ytick.color'] = 'white'
 
         # 데이터 준비
         series_info = self.database.get_match_series_info(game_id, player_name)
         champion_name = series_info["name_us"][0]
         opp_champion_name = self.database.get_oppnent_player_name(game_id, player_name).get("name_us")
-        select_columns = {
-            "goldat":[
-                "goldat10", "opp_goldat10", "golddiffat10",
-                "goldat15", "opp_goldat15", "golddiffat15",
-                "goldat20", "opp_goldat20", "golddiffat20",
-                "goldat25", "opp_goldat25", "golddiffat25"],
-            "xpat":[
-                "xpat10", "opp_xpat10", "xpdiffat10",
-                "xpat15", "opp_xpat15", "xpdiffat15",
-                "xpat20", "opp_xpat20", "xpdiffat20",
-                "xpat25", "opp_xpat25", "xpdiffat25"],
-            "csat":[
-                "csat10", "opp_csat10", "csdiffat10",
-                "csat15", "opp_csat15", "csdiffat15",
-                "csat20", "opp_csat20", "csdiffat20",
-                "csat25", "opp_csat25", "csdiffat25"],
-            "killsat": [
-                "killsat10", "opp_killsat10",
-                "killsat15", "opp_killsat15",
-                "killsat20", "opp_killsat20",
-                "killsat25", "opp_killsat25"],
-            "assistsat": [
-                "assistsat10", "opp_assistsat10",
-                "assistsat15", "opp_assistsat15",
-                "assistsat20", "opp_assistsat20",
-                "assistsat25", "opp_assistsat25"],
-            "deathsat": [
-                "deathsat10", "opp_deathsat10",
-                "deathsat15", "opp_deathsat15",
-                "deathsat20", "opp_deathsat20",
-                "deathsat25", "opp_deathsat25", ],
-        }
-        df = series_info[select_columns].copy()
-        
-        self.draw_series(champion_name, df, game_id, opp_champion_name, player_name)
 
-    def draw_series(self, champion_name, df, game_id, opp_champion_name, player_name):
-        # 시간대별 데이터 추출
+        for metric, config in metrics_config.items():
+            self.draw_series(
+                game_id=game_id,
+                player_name=player_name,
+                champion_name=champion_name,
+                opp_champion_name=opp_champion_name,
+                df=series_info,
+                metric=metric,
+                config=config
+            )
+
+    def draw_series(self, game_id, player_name, champion_name, opp_champion_name, df, metric, config):
         time_points = [10, 15, 20, 25]
-        player_gold = []
-        opponent_gold = []
+        player_values = []
+        opponent_values = []
         valid_times = []
-        for time in time_points:
-            gold_val = df[f'goldat{time}'].iloc[0]
-            opp_gold_val = df[f'opp_goldat{time}'].iloc[0]
 
-            if pd.notna(gold_val) and pd.notna(opp_gold_val):
-                player_gold.append(gold_val / 1000)
-                opponent_gold.append(opp_gold_val / 1000)
+        for time in time_points:
+            col_name = f"{config['columns'][0]}{time}"
+            opp_col_name = f"{config['columns'][1]}{time}"
+
+            val = df[col_name].iloc[0]
+            opp_val = df[opp_col_name].iloc[0]
+
+            if pd.notna(val) and pd.notna(opp_val):
+                player_values.append(val / config['div_factor'])
+                opponent_values.append(opp_val / config['div_factor'])
                 valid_times.append(time)
+
         fig, ax = plt.subplots(figsize=(12, 7), dpi=100)
+
         # 배경 스타일링
-        ax.set_facecolor('#1a1a1a')  # 어두운 배경
+        ax.set_facecolor('#1a1a1a')
         fig.patch.set_facecolor('#1a1a1a')
-        # 골드 라인 그리기
-        player_line = ax.plot(valid_times, player_gold, '-', color='#1E40AF',
+
+        # 라인 그리기
+        player_line = ax.plot(valid_times, player_values, '-', color='#1E40AF',
                               linewidth=3, marker='o', markersize=8,
-                              label=f'({champion_name}) 골드')
-        opp_line = ax.plot(valid_times, opponent_gold, '-', color='#DC2626',
+                              label=f'({champion_name})')
+        opp_line = ax.plot(valid_times, opponent_values, '-', color='#DC2626',
                            linewidth=3, marker='o', markersize=8,
-                           label=f'({opp_champion_name}) 골드')
-        # 골드 차이 영역 표시
-        ax.fill_between(valid_times, player_gold, opponent_gold,
-                        where=(np.array(player_gold) >= np.array(opponent_gold)),
+                           label=f'({opp_champion_name})')
+
+        # 차이 영역 표시
+        ax.fill_between(valid_times, player_values, opponent_values,
+                        where=(np.array(player_values) >= np.array(opponent_values)),
                         color='#1E40AF', alpha=0.1)
-        ax.fill_between(valid_times, player_gold, opponent_gold,
-                        where=(np.array(player_gold) <= np.array(opponent_gold)),
+        ax.fill_between(valid_times, player_values, opponent_values,
+                        where=(np.array(player_values) <= np.array(opponent_values)),
                         color='#DC2626', alpha=0.1)
+
         # 격자 스타일링
         ax.grid(True, linestyle='--', alpha=0.3, color='gray')
+
         # 축 레이블 및 제목 설정
-        ax.set_title(f'시간대별 골드 획득', pad=20, fontsize=24,
-                     fontweight='bold', color='white')
+        ax.set_title(config['title'], pad=20, fontsize=24, fontweight='bold', color='white')
         ax.set_xlabel('게임 시간 (분)', labelpad=10, fontsize=22, color='white')
-        ax.set_ylabel('골드 (K)', labelpad=10, fontsize=22, color='white')
+        ax.set_ylabel(config['ylabel'], labelpad=10, fontsize=22, color='white')
+
         # x축 설정
         ax.set_xticks(valid_times)
         ax.set_xticklabels([f'{t}분' for t in valid_times], fontsize=20, color='white')
         ax.tick_params(axis='y', labelsize=20)
-        # y축 범위 설정 (여백 10% 추가)
-        all_gold = player_gold + opponent_gold
-        min_gold = min(all_gold)
-        max_gold = max(all_gold)
-        padding = (max_gold - min_gold) * 0.1
-        ax.set_ylim(min_gold - padding, max_gold + padding)
-        # y축 단위 포맷팅
-        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{int(x)}K'))
-        # 범례 스타일링 - 배경색과 텍스트 색상 조정
+
+        # y축 범위 설정
+        all_values = player_values + opponent_values
+        min_val = min(all_values)
+        max_val = max(all_values)
+        padding = (max_val - min_val) * 0.1
+        ax.set_ylim(min_val - padding, max_val + padding)
+
+        # 범례 스타일링
         legend = ax.legend(loc='upper left', frameon=True,
                            bbox_to_anchor=(0.02, 0.98),
                            fontsize=20)
         frame = legend.get_frame()
-        frame.set_facecolor('#1a1a1a')  # 범례 배경색을 그래프 배경색과 동일하게
-        frame.set_edgecolor('white')  # 테두리 색상
+        frame.set_facecolor('#1a1a1a')
+        frame.set_edgecolor('white')
+
         # 범례 텍스트 색상 변경
         for text in legend.get_texts():
             text.set_color('white')
+
         # 그래프 테두리 제거
         for spine in ['top', 'right']:
             ax.spines[spine].set_visible(False)
+
         # 데이터 포인트에 값 표시
-        for i, (pg, og) in enumerate(zip(player_gold, opponent_gold)):
-            ax.annotate(f'{pg:.1f}K', (valid_times[i], pg),
+        for i, (pv, ov) in enumerate(zip(player_values, opponent_values)):
+            ax.annotate(config['format'](pv * config['div_factor']),
+                        (valid_times[i], pv),
                         textcoords="offset points", xytext=(0, 10),
                         ha='center', color='white', fontsize=18)
-            ax.annotate(f'{og:.1f}K', (valid_times[i], og),
-                        textcoords="offset points", xytext=(0, 10),  # 겹치지 않도록 위치 조정
+            ax.annotate(config['format'](ov * config['div_factor']),
+                        (valid_times[i], ov),
+                        textcoords="offset points", xytext=(0, -20),
                         ha='center', color='white', fontsize=18)
+
         # 레이아웃 조정
         plt.tight_layout()
+
+        # 저장
         output_path = self.output_dir / 'Series' / 'PickRate' / self.today_date
         output_path.mkdir(exist_ok=True, parents=True)
         plt.savefig(
-            output_path / f'{game_id}_{player_name}_gold.png',
+            output_path / f'{game_id}_{player_name}_{metric}.png',
             bbox_inches='tight',
             dpi=300,
             transparent=True
         )
         plt.close()
+
+    def draw_combined_series(self, game_id, player_name):
+        # 기본 스타일 설정
+        plt.style.use('seaborn-v0_8-dark')
+        plt.rcParams['font.family'] = 'NanumGothic'
+        plt.rcParams['axes.unicode_minus'] = False
+        plt.rcParams['text.color'] = 'white'
+        plt.rcParams['axes.labelcolor'] = 'white'
+        plt.rcParams['xtick.color'] = 'white'
+        plt.rcParams['ytick.color'] = 'white'
+
+        # 데이터 준비
+        series_info = self.database.get_match_series_info(game_id, player_name)
+        champion_name = series_info["name_us"][0]
+        opp_champion_name = self.database.get_oppnent_player_name(game_id, player_name).get("name_us")
+
+        # KDA 그래프와 경제력 그래프를 각각 그리기
+        self.draw_kda_graph(game_id, player_name, champion_name, opp_champion_name, series_info)
+        self.draw_economy_graph(game_id, player_name, champion_name, opp_champion_name, series_info)
+
+    def draw_kda_graph(self, game_id, player_name, champion_name, opp_champion_name, series_info):
+        time_points = [10, 15, 20, 25]
+        metrics = ['kills', 'deaths', 'assists']
+
+        fig, ax = plt.subplots(figsize=(14, 8), dpi=100)
+        ax.set_facecolor('#1a1a1a')
+        fig.patch.set_facecolor('#1a1a1a')
+
+        colors = {
+            'kills': '#4CAF50',  # 초록색
+            'deaths': '#DC2626',  # 빨간색
+            'assists': '#1E40AF'  # 파란색
+        }
+
+        # 각 지표별로 플레이어와 상대방 데이터 플로팅
+        for metric in metrics:
+            player_values = []
+            opponent_values = []
+            valid_times = []
+
+            for time in time_points:
+                val = series_info[f'{metric}at{time}'].iloc[0]
+                opp_val = series_info[f'opp_{metric}at{time}'].iloc[0]
+
+                if pd.notna(val) and pd.notna(opp_val):
+                    player_values.append(val)
+                    opponent_values.append(opp_val)
+                    valid_times.append(time)
+
+            # 실선 스타일로 플레이어 데이터
+            ax.plot(valid_times, player_values, '-', color=colors[metric],
+                    linewidth=3, marker='o', markersize=8,
+                    label=f'{champion_name} {metric.title()}')
+
+            # 점선 스타일로 상대방 데이터
+            ax.plot(valid_times, opponent_values, '--', color=colors[metric],
+                    linewidth=2, marker='s', markersize=6,
+                    label=f'{opp_champion_name} {metric.title()}')
+
+            # 데이터 포인트에 값 표시
+            for i, (pv, ov) in enumerate(zip(player_values, opponent_values)):
+                ax.annotate(f'{pv:.0f}', (valid_times[i], pv),
+                            textcoords="offset points", xytext=(0, 10),
+                            ha='center', color='white', fontsize=12)
+                ax.annotate(f'{ov:.0f}', (valid_times[i], ov),
+                            textcoords="offset points", xytext=(0, -15),
+                            ha='center', color='white', fontsize=12)
+
+        # 그래프 스타일링
+        ax.grid(True, linestyle='--', alpha=0.3, color='gray')
+        ax.set_title('시간대별 KDA', pad=20, fontsize=24, fontweight='bold', color='white')
+        ax.set_xlabel('게임 시간 (분)', labelpad=10, fontsize=22, color='white')
+        ax.set_ylabel('횟수', labelpad=10, fontsize=22, color='white')
+
+        # x축 설정
+        ax.set_xticks(valid_times)
+        ax.set_xticklabels([f'{t}분' for t in valid_times], fontsize=20, color='white')
+        ax.tick_params(axis='y', labelsize=20)
+
+        # 범례 스타일링
+        legend = ax.legend(loc='upper left', frameon=True,
+                           bbox_to_anchor=(0.02, 0.98),
+                           fontsize=16, ncol=2)
+        frame = legend.get_frame()
+        frame.set_facecolor('#1a1a1a')
+        frame.set_edgecolor('white')
+
+        for text in legend.get_texts():
+            text.set_color('white')
+
+        # 그래프 테두리 제거
+        for spine in ['top', 'right']:
+            ax.spines[spine].set_visible(False)
+
+        plt.tight_layout()
+
+        # 저장
+        output_path = self.output_dir / 'Series' / 'PickRate' / self.today_date
+        output_path.mkdir(exist_ok=True, parents=True)
+        plt.savefig(
+            output_path / f'{game_id}_{player_name}_kda_combined.png',
+            bbox_inches='tight',
+            dpi=300,
+            transparent=True
+        )
+        plt.close()
+
+    def draw_economy_graph(self, game_id, player_name, champion_name, opp_champion_name, series_info):
+        time_points = [10, 15, 20, 25]
+        metrics = {
+            'gold': {'div_factor': 1000, 'format': lambda x: f'{x / 1000:.1f}K'},
+            'xp': {'div_factor': 1, 'format': lambda x: f'{x:.0f}'},
+            'cs': {'div_factor': 1, 'format': lambda x: f'{x:.0f}'}
+        }
+
+        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(14, 12), dpi=100)
+        fig.patch.set_facecolor('#1a1a1a')
+
+        colors = {
+            'gold': '#FFD700',  # 골드색
+            'xp': '#9C27B0',  # 보라색
+            'cs': '#2196F3'  # 하늘색
+        }
+
+        axes = {'gold': ax1, 'xp': ax2, 'cs': ax3}
+        titles = {
+            'gold': '골드',
+            'xp': '경험치',
+            'cs': 'CS'
+        }
+
+        for metric, config in metrics.items():
+            ax = axes[metric]
+            ax.set_facecolor('#1a1a1a')
+
+            player_values = []
+            opponent_values = []
+            valid_times = []
+
+            for time in time_points:
+                val = series_info[f'{metric}at{time}'].iloc[0]
+                opp_val = series_info[f'opp_{metric}at{time}'].iloc[0]
+
+                if pd.notna(val) and pd.notna(opp_val):
+                    player_values.append(val / config['div_factor'])
+                    opponent_values.append(opp_val / config['div_factor'])
+                    valid_times.append(time)
+
+            # 라인 그리기
+            ax.plot(valid_times, player_values, '-', color=colors[metric],
+                    linewidth=3, marker='o', markersize=8,
+                    label=champion_name)
+            ax.plot(valid_times, opponent_values, '--', color=colors[metric],
+                    linewidth=2, marker='s', markersize=6,
+                    label=opp_champion_name)
+
+            # 차이 영역 표시
+            ax.fill_between(valid_times, player_values, opponent_values,
+                            where=(np.array(player_values) >= np.array(opponent_values)),
+                            color=colors[metric], alpha=0.1)
+            ax.fill_between(valid_times, player_values, opponent_values,
+                            where=(np.array(player_values) <= np.array(opponent_values)),
+                            color=colors[metric], alpha=0.1)
+
+            # 데이터 포인트에 값 표시
+            for i, (pv, ov) in enumerate(zip(player_values, opponent_values)):
+                ax.annotate(config['format'](pv * config['div_factor']),
+                            (valid_times[i], pv),
+                            textcoords="offset points", xytext=(0, 10),
+                            ha='center', color='white', fontsize=12)
+                ax.annotate(config['format'](ov * config['div_factor']),
+                            (valid_times[i], ov),
+                            textcoords="offset points", xytext=(0, -15),
+                            ha='center', color='white', fontsize=12)
+
+            # 축 스타일링
+            ax.grid(True, linestyle='--', alpha=0.3, color='gray')
+            ax.set_title(f'시간대별 {titles[metric]}', pad=15, fontsize=18, color='white')
+            ax.set_xlabel('게임 시간 (분)', labelpad=10, fontsize=16, color='white')
+            ax.tick_params(axis='both', labelsize=14)
+            ax.set_xticks(valid_times)
+            ax.set_xticklabels([f'{t}분' for t in valid_times])
+
+            # 범례 스타일링
+            legend = ax.legend(loc='upper left', frameon=True,
+                               bbox_to_anchor=(0.02, 0.98),
+                               fontsize=14)
+            frame = legend.get_frame()
+            frame.set_facecolor('#1a1a1a')
+            frame.set_edgecolor('white')
+
+            for text in legend.get_texts():
+                text.set_color('white')
+
+            # 그래프 테두리 제거
+            for spine in ['top', 'right']:
+                ax.spines[spine].set_visible(False)
+
+        plt.tight_layout()
+
+        # 저장
+        output_path = self.output_dir / 'Series' / 'PickRate' / self.today_date
+        output_path.mkdir(exist_ok=True, parents=True)
+        plt.savefig(
+            output_path / f'{game_id}_{player_name}_economy_combined.png',
+            bbox_inches='tight',
+            dpi=300,
+            transparent=True
+        )
+        plt.close()
+
+    # def get_position_weights(self, position):
+    #     """
+    #     Get scoring weights based on player position
+    #     """
+    #     weights = {
+    #         'top': {
+    #             'kda': 0.25,
+    #             'economy': 0.30,
+    #             'vision': 0.15,
+    #             'objective': 0.15,
+    #             'damage': {
+    #                 'dealt': 0.08,
+    #                 'taken': 0.07
+    #             }
+    #         },
+    #         'jng': {  # 데이터베이스의 position 컬럼에 맞춤
+    #             'kda': 0.20,
+    #             'economy': 0.15,
+    #             'vision': 0.20,
+    #             'objective': 0.35,
+    #             'damage': {
+    #                 'dealt': 0.05,
+    #                 'taken': 0.05
+    #             }
+    #         },
+    #         'mid': {
+    #             'kda': 0.25,
+    #             'economy': 0.25,
+    #             'vision': 0.15,
+    #             'objective': 0.15,
+    #             'damage': {
+    #                 'dealt': 0.15,
+    #                 'taken': 0.05
+    #             }
+    #         },
+    #         'bot': {  # ADC position
+    #             'kda': 0.30,
+    #             'economy': 0.25,
+    #             'vision': 0.10,
+    #             'objective': 0.15,
+    #             'damage': {
+    #                 'dealt': 0.15,
+    #                 'taken': 0.05
+    #             }
+    #         },
+    #         'sup': {  # Support position
+    #             'kda': 0.20,
+    #             'economy': 0.10,
+    #             'vision': 0.35,
+    #             'objective': 0.20,
+    #             'damage': {
+    #                 'dealt': 0.05,
+    #                 'taken': 0.10
+    #             }
+    #         }
+    #     }
+    #     return weights.get(position.lower(), weights['mid'])
+    #
+    # def calculate_mvp_score(self, game_df):
+    #     """
+    #     Calculate MVP score for each player considering their positions
+    #     """
+    #
+    #     def calculate_player_score(row):
+    #         weights = self.get_position_weights(row['position'])
+    #
+    #         # 1. KDA Score
+    #         if row['deaths'] == 0:
+    #             kda = (row['kills'] + row['assists']) * 2
+    #         else:
+    #             kda = (row['kills'] + row['assists']) / row['deaths']
+    #
+    #         kill_participation = (row['kills'] + row['assists']) / row['teamkills'] if row['teamkills'] > 0 else 0
+    #         first_blood_bonus = 2 if (row['firstbloodkill'] or row['firstbloodassist']) else 0
+    #
+    #         kda_score = (
+    #                             (kda * 0.4) +
+    #                             (kill_participation * 0.4) +
+    #                             (first_blood_bonus * 0.2)
+    #                     ) * weights['kda'] * 100
+    #
+    #         # 2. Economy Score
+    #         gold_efficiency = row['goldspent'] / row['earnedgold'] if row['earnedgold'] > 0 else 0
+    #         economy_score = (
+    #                                 (row['cspm'] / 10 * 0.3) +
+    #                                 (row['damageshare'] * 0.4) +
+    #                                 (row['earnedgoldshare'] * 0.3)
+    #                         ) * weights['economy'] * 100
+    #
+    #         # 3. Vision Score
+    #         vision_score = (
+    #                                (row['vspm'] * 0.4) +
+    #                                (row['wcpm'] * 0.3) +
+    #                                (row['wpm'] * 0.3)
+    #                        ) * weights['vision'] * 100
+    #
+    #         # 4. Objective Score
+    #         first_objectives = sum([
+    #             row['firsttower'], row['firstdragon'],
+    #             row['firstherald'], row['firstbaron']
+    #         ])
+    #
+    #         objective_score = ((first_objectives / 4 * 0.5) +
+    #                                   (row['towers'] / (row['towers'] + row['opp_towers']) * 0.25 if (row['towers'] +
+    #                                                                                                   row[
+    #                                                                                                       'opp_towers']) > 0 else 0) +
+    #                                   (row['dragons'] / (row['dragons'] + row['opp_dragons']) * 0.25 if (row[
+    #                                                                                                          'dragons'] +
+    #                                                                                                      row[
+    #                                                                                                          'opp_dragons']) > 0 else 0)
+    #                           ) * weights['objective'] * 100
+    #
+    #         # 5. Damage Score
+    #         damage_score = (
+    #                                (row['damageshare'] * weights['damage']['dealt']) +
+    #                                ((row['damagetakenperminute'] / (row['dpm'] if row['dpm'] > 0 else 1)) *
+    #                                 weights['damage']['taken'])
+    #                        ) * 100
+    #
+    #         # Position-specific bonuses
+    #         position = row['position'].lower()
+    #         if position == 'jng':
+    #             objective_score *= 1.2
+    #             if row['monsterkillsenemyjungle'] > 5:
+    #                 objective_score *= 1.1
+    #
+    #         elif position == 'sup':
+    #             vision_score *= 1.2
+    #             if row['assists'] > row['kills'] * 2:
+    #                 kda_score *= 1.1
+    #
+    #         elif position == 'mid':
+    #             if kill_participation > 0.6:
+    #                 kda_score *= 1.15
+    #
+    #         elif position == 'bot':
+    #             if row['deaths'] < 3:
+    #                 kda_score *= 1.2
+    #
+    #         elif position == 'top':
+    #             if row['firsttower']:
+    #                 objective_score *= 1.2
+    #
+    #         # Victory bonus
+    #         if row['result']:
+    #             total_score_base = kda_score + economy_score + vision_score + objective_score + damage_score
+    #             victory_bonus = total_score_base * 0.1  # 승리 시 10% 보너스
+    #         else:
+    #             victory_bonus = 0
+    #
+    #         total_score = kda_score + economy_score + vision_score + objective_score + damage_score + victory_bonus
+    #
+    #         return {
+    #             'total_score': total_score,
+    #             'breakdown': {
+    #                 'KDA': kda_score,
+    #                 'Economy': economy_score,
+    #                 'Vision': vision_score,
+    #                 'Objective': objective_score,
+    #                 'Damage': damage_score,
+    #                 'Victory Bonus': victory_bonus
+    #             }
+    #         }
+    #
+    #     # Calculate scores for all players
+    #     scores = game_df.apply(calculate_player_score, axis=1)
+    #
+    #     # Create result DataFrame
+    #     result_df = game_df[['playername', 'champion', 'position']].copy()
+    #     result_df['mvp_score'] = scores.apply(lambda x: x['total_score'])
+    #     result_df['score_breakdown'] = scores.apply(lambda x: x['breakdown'])
+    #     print(result_df)
+    #     return result_df.sort_values('mvp_score', ascending=False)
+
+    def get_game_mvp(self, game_id):
+        game_df = self.database.get_game_data(game_id)
+        if game_df is None or game_df.empty:
+            return None
+
+        mvp_scores = self.calculate_mvp_score(game_df)
+        print(mvp_scores[['playername','champion','position','mvp_score']])
+        mvp_player = mvp_scores.iloc[0]
+
+        print(f"\nMVP of Game {game_id}")
+        print(f"Player: {mvp_player['playername']}")
+        print(f"Champion: {mvp_player['champion']}")
+        print(f"Position: {mvp_player['position']}")
+        print(f"Total Score: {mvp_player['mvp_score']:.2f}")
+        print("\nScore Breakdown:")
+        for category, score in mvp_player['score_breakdown'].items():
+            print(f"{category}: {score:.2f}")
+        return mvp_player
+
+    def calculate_mvp_score(self, df):
+        # 포지션별 가중치 정의
+        position_weights = {
+            'top': {
+                'combat': 1.7,
+                'economy': 1.4,
+                'vision': 0.5,
+                'objective': 0.8,
+                'laning': 1.1
+            },
+            'mid': {
+                'combat': 2.0,
+                'economy': 1.6,
+                'vision': 0.5,
+                'objective': 0.6,
+                'laning': 0.8
+            },
+            'bottom': {
+                'combat': 1.8,
+                'economy': 1.8,
+                'vision': 0.4,
+                'objective': 0.5,
+                'laning': 1.0
+            },
+            'jungle': {
+                'combat': 1.6,
+                'economy': 0.8,
+                'vision': 0.9,
+                'objective': 1.7,
+                'laning': 0.5
+            },
+            'support': {
+                'combat': 1.4,
+                'economy': 0.4,
+                'vision': 1.8,
+                'objective': 0.8,
+                'laning': 1.1
+            }
+        }
+
+        team_data = df[df['position'] == 'team'].copy()
+        player_data = df[df['position'] != 'team'].copy()
+
+        def normalize_stats(group):
+            stats_to_normalize = [
+                'kills', 'deaths', 'assists', 'cspm', 'damageshare', 'earnedgoldshare',
+                'vspm', 'wcpm', 'wpm', 'damagetakenperminute', 'damagemitigatedperminute',
+                'monsterkillsenemyjungle', 'visionscore', 'gspd',
+                'golddiffat15', 'xpdiffat15', 'csdiffat15'
+            ]
+
+            for stat in stats_to_normalize:
+                if stat in group.columns:
+                    max_val = group[stat].max()
+                    min_val = group[stat].min()
+                    if max_val != min_val:
+                        group[f'normalized_{stat}'] = (group[stat] - min_val) / (max_val - min_val)
+                    else:
+                        group[f'normalized_{stat}'] = 0.5
+            return group
+
+        # 게임별로 스탯 정규화 적용
+        player_data = normalize_stats(player_data)
+
+        mvp_scores = []
+
+        for _, player in player_data.iterrows():
+            position = player['position'].lower()
+            weights = position_weights[position]
+
+            # 전투력 점수 계산
+            combat_score = (
+                                   (player['normalized_kills'] * 0.15) +
+                                   ((1 - player['normalized_deaths']) * 0.15) +
+                                   (player['normalized_assists'] * 0.1) +
+                                   (player['normalized_damageshare'] * 0.4) +
+                                   (player['normalized_damagemitigatedperminute'] * 0.2)
+                           ) * weights['combat']
+
+            # 경제력 점수 계산
+            economy_score = (
+                                    (player['normalized_cspm'] * 0.4) +
+                                    (player['normalized_earnedgoldshare'] * 0.6)
+                            ) * weights['economy']
+
+            # 시야 점수 계산
+            vision_score = (
+                                   (player['normalized_visionscore'] * 0.5) +
+                                   (player['normalized_wcpm'] * 0.3) +
+                                   (player['normalized_wpm'] * 0.2)
+                           ) * weights['vision']
+
+            laning_score = (
+                                   (player['normalized_golddiffat15'] * 0.4) +
+                                   (player['normalized_xpdiffat15'] * 0.3) +
+                                   (player['normalized_csdiffat15'] * 0.3)
+                           ) * weights['laning']
+
+            team_row = team_data[team_data['result'] == player['result']].iloc[0]
+            objective_participation = 0
+
+            max_dragons = 4
+            max_barons = 2
+            max_towers = 11
+            max_heralds = 2
+            tower_score = min(team_row['towers'] / max_towers, 1.0) * 0.25
+            dragon_score = min(team_row['dragons'] / max_dragons, 1.0) * 0.35
+            baron_score = min(team_row['barons'] / max_barons, 1.0) * 0.25
+            herald_score = min(team_row['heralds'] / max_heralds, 1.0) * 0.15
+            objective_participation = tower_score + dragon_score + baron_score + herald_score
+            objective_score = objective_participation * weights['objective']
+
+            # 점수 세부 내역 저장
+            score_breakdown = {
+                'combat': combat_score,
+                'economy': economy_score,
+                'vision': vision_score,
+                'objective': objective_score,
+                'laning': laning_score
+            }
+
+            # 최종 MVP 점수 계산
+            final_score = sum(score_breakdown.values())
+
+            # 승리 팀 보너스
+            if player['result']:
+                final_score *= 1.1
+
+            mvp_scores.append({
+                'playername': player['playername'],
+                'champion': player['champion'],
+                'position': position,
+                'mvp_score': final_score,
+                'score_breakdown': score_breakdown,
+                'kills': player['kills'],
+                'deaths': player['deaths'],
+                'assists': player['assists'],
+                'damage_share': player['damageshare'],
+                'vision_score': player['visionscore'],
+                'result': player['result']
+            })
+
+        mvp_df = pd.DataFrame(mvp_scores)
+        ideal_max_score = 5.5
+        mvp_df['mvp_score'] = mvp_df['mvp_score'] / ideal_max_score
+        scaling_factor = 10.0
+        power_factor = 1.2
+        mvp_df['mvp_score'] = (mvp_df['mvp_score'] * power_factor) * scaling_factor
+        mvp_df['mvp_score'] = mvp_df['mvp_score'].clip(0, 10)
+        mvp_df = mvp_df.sort_values('mvp_score', ascending=False)
+
+        return mvp_df
+
