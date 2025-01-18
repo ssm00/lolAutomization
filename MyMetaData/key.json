@@ -1,0 +1,7 @@
+{
+  "model": "gpt",
+  "gpt_version": "gpt-4o",
+  "claude_version": "claude-3-5-sonnet-20241022",
+  "open_ai_api_key": "",
+  "claude_api_key": ""
+}
