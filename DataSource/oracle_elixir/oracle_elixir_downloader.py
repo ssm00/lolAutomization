@@ -20,7 +20,7 @@ class OracleElixirDownloader:
 
     def save_to_db(self):
         df = self.read_csv()
-        df = df.rename(columns={'year':'game_year','date':'game_date','dragons (type unknown)':'dragons_type_unknown', 'team kpm':'team_kpm', 'earned gpm':'earned_gpm', 'total cs':'total_cs'})
+        df = df.rename(columns={'year':'game_year','date':'game_date','dragons (type unknown)':'dragons_type_unknown', 'team kpm':'team_kpm', 'earned gpm':'earned_gpm', 'total cs':'total_cs', 'champion':'name_us'})
         position_mapping = {
             'sup': 'support',
             'jng': 'jungle',
