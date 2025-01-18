@@ -168,4 +168,4 @@ cython_debug/
 *.txt
 *.webp
 *.eot
-!/MyMetaData/key.json
+MyMetaData/key.json
