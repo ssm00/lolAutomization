@@ -191,7 +191,7 @@ class Database:
             SELECT 
                 o.gameid,
                 o.position,
-                o.champion,
+                o.name_us,
                 o.playername,
                 o.teamname,
                 o.patch,
@@ -201,10 +201,10 @@ class Database:
                 p.is_outlier
             FROM oracle_elixir o
             JOIN performance_score p 
-                ON o.champion = p.name_us
+                ON o.name_us = p.name_us
                 AND o.patch = p.patch
                 AND o.position = p.line
-            WHERE (o.position, o.champion) IN (
+            WHERE (o.position, o.name_us) IN (
                 SELECT line, name_us 
                 FROM outlier_champs
             )
@@ -228,7 +228,7 @@ class Database:
 
     def get_player_info(self, patch):
         select_query = f"""
-        SELECT gameid, position, playername, champion, teamname, side
+        SELECT *
         FROM oracle_elixir 
         WHERE position != 'team'
         AND patch = {patch}
@@ -251,14 +251,18 @@ class Database:
         positions = ['top', 'jungle', 'mid', 'bottom', 'support']
         for position in positions:
             select_query = f"""
-            select name_us, pick_rate
+            select name_us, name_kr, pick_rate
             from champion_score_{position}
             where patch = {patch}
             """
             df = pd.read_sql(select_query, self.connection)
             thresh_hold = np.percentile(df['pick_rate'], 10)
+            champions_dict = {row['name_us']: {
+                'pick_rate': row['pick_rate'],
+                'name_kr': row['name_kr']
+            } for _, row in df.iterrows()}
             position_champions[position] = {
-                'champions': df['name_us'].tolist(),
+                'name_us_list': champions_dict,
                 'low_pickrate_threshold': thresh_hold,
                 'low_pickrate_champions': df[df['pick_rate'] <= thresh_hold]['name_us'].tolist()
             }
@@ -272,3 +276,105 @@ class Database:
         and cb.name_us not in (select name_us from champion_score_mid)
         """
         return pd.read_sql(select_query, self.connection)['name_us'].tolist()
+
+    def get_match_series_info(self, game_id, player_name):
+        select_query = f"""
+        select
+            name_us,
+            goldat10,
+            xpat10,
+            csat10,
+            opp_goldat10,
+            opp_xpat10,
+            opp_csat10,
+            golddiffat10,
+            xpdiffat10,
+            csdiffat10,
+            killsat10,
+            assistsat10,
+            deathsat10,
+            opp_killsat10,
+            opp_assistsat10,
+            opp_deathsat10,
+            goldat15,
+            xpat15,
+            csat15,
+            opp_goldat15,
+            opp_xpat15,
+            opp_csat15,
+            golddiffat15,
+            xpdiffat15,
+            csdiffat15,
+            killsat15,
+            assistsat15,
+            deathsat15,
+            opp_killsat15,
+            opp_assistsat15,
+            opp_deathsat15,
+            goldat20,
+            xpat20,
+            csat20,
+            opp_goldat20,
+            opp_xpat20,
+            opp_csat20,
+            golddiffat20,
+            xpdiffat20,
+            csdiffat20,
+            killsat20,
+            assistsat20,
+            deathsat20,
+            opp_killsat20,
+            opp_assistsat20,
+            opp_deathsat20,
+            goldat25,
+            xpat25,
+            csat25,
+            opp_goldat25,
+            opp_xpat25,
+            opp_csat25,
+            golddiffat25,
+            xpdiffat25,
+            csdiffat25,
+            killsat25,
+            assistsat25,
+            deathsat25,
+            opp_killsat25,
+            opp_assistsat25,
+            opp_deathsat25
+        from oracle_elixir 
+        where gameid = %s and playername = %s
+        """
+        return pd.read_sql(select_query, self.connection, params=(game_id, player_name))
+
+    def get_oppnent_player_name(self, game_id, player_name):
+        select_query = """
+        select name_us, playername 
+        from oracle_elixir oe
+        where gameid = (%s) 
+        and position = (select position as p from oracle_elixir where gameid = (%s) and playername = (%s))
+        and playername != (%s) 
+        """
+        return self.fetch_one(select_query, args=(game_id, game_id, player_name, player_name))
+
+    def get_game_data(self, game_id):
+        query = """
+                    SELECT 
+                        gameid, position, playername, name_us as champion,
+                        kills, deaths, assists, teamkills, firstbloodkill, firstbloodassist,
+                        cspm, damageshare, earnedgoldshare, goldspent, earnedgold,
+                        vspm, wcpm, wpm, gamelength,
+                        firsttower, firstdragon, firstherald, firstbaron,
+                        towers, opp_towers, dragons, barons, heralds, opp_dragons,
+                        damagetochampions, dpm, damagetakenperminute, damagemitigatedperminute,
+                        monsterkillsenemyjungle, visionscore, gspd,
+                        golddiffat15, xpdiffat15, csdiffat15,
+                        result
+                    FROM oracle_elixir 
+                    WHERE gameid = %s 
+                    """
+        return pd.read_sql(query, self.connection, params=(game_id,))
+
+    def get_official_image_name(self):
+        query = "select lol_official_image_name from champion_info"
+        return pd.read_sql(query, self.connection)
+
