@@ -356,7 +356,7 @@ class Database:
         """
         return self.fetch_one(select_query, args=(game_id, game_id, player_name, player_name))
 
-    def get_game_data(self, game_id):
+    def get_mvp_base_data(self, game_id):
         query = """
                     SELECT 
                         gameid, position, playername, name_us as champion,
@@ -374,7 +374,11 @@ class Database:
                     """
         return pd.read_sql(query, self.connection, params=(game_id,))
 
-    def get_official_image_name(self):
-        query = "select lol_official_image_name from champion_info"
+    def get_champion_name(self):
+        query = "select * from champion_info"
         return pd.read_sql(query, self.connection)
+
+    def get_game_data(self, game_id):
+        select_query = "select * from oracle_elixir where gameid = %s"
+        return pd.read_sql(select_query, self.connection, params=game_id)
 
