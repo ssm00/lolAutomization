@@ -135,6 +135,7 @@ class ChampionDetection:
         else:
             print("모든 챔피언 선택이 일반적입니다.")
 
+    # 모든 매치 데이터에서 IF
     def run_match_info(self):
         match_df = self.database.get_team_info()
         features = ['gamelength','result','kills','deaths','assists','team_kpm','ckpm','damagetochampions','dpm','damagetakenperminute','visionscore','totalgold','earned_gpm','gspd']
@@ -1474,7 +1475,7 @@ class ChampionDetection:
     #     return result_df.sort_values('mvp_score', ascending=False)
 
     def get_game_mvp(self, game_id):
-        game_df = self.database.get_game_data(game_id)
+        game_df = self.database.get_mvp_base_data(game_id)
         if game_df is None or game_df.empty:
             return None
 
@@ -1552,12 +1553,8 @@ class ChampionDetection:
                     else:
                         group[f'normalized_{stat}'] = 0.5
             return group
-
-        # 게임별로 스탯 정규화 적용
         player_data = normalize_stats(player_data)
-
         mvp_scores = []
-
         for _, player in player_data.iterrows():
             position = player['position'].lower()
             weights = position_weights[position]
