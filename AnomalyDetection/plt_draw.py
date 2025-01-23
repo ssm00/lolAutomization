@@ -4,6 +4,7 @@ import seaborn as sns
 import pandas as pd
 from pathlib import Path
 import numpy as np
+from datetime import datetime
 
 
 class PltDraw:
@@ -13,9 +14,9 @@ class PltDraw:
         self.patch = meta_data.anomaly_info.get("patch")
         self.plt_out_dir = Path(__file__).parent.parent / "PltOutput"
 
-    def draw_pick_rates(self, name_us, position):
+    def draw_pick_rates_white_bg(self, name_us, position):
         matplotlib.use('Agg')
-        position_champions = self.database.get_pick_rate_info(self.patch)
+        position_champions = self.database.get_all_position_pick_rate(self.patch)
         plt.style.use('seaborn-v0_8-dark')
         plt.rc('font', family='Malgun Gothic')
         champ_data = position_champions[position]['name_us_list']
@@ -89,8 +90,12 @@ class PltDraw:
             spine.set_edgecolor('#CCCCCC')
 
         plt.tight_layout()
+        today_date = datetime.today().date().strftime("%y_%m_%d")
+        save_dir = self.plt_out_dir / "PickRate" / "Basic" / today_date
+        save_dir.mkdir(exist_ok=True, parents=True)
+        save_path = save_dir / f'pick_rate_white_{position}_{name_us}_{self.patch}.png'
         plt.savefig(
-            self.plt_out_dir / "PickRate" / f'{position_kr} {unusual_data["name_kr"].iloc[0]} 픽률   패치 버전:{self.patch}',
+            save_path,
             bbox_inches='tight',
             dpi=300,
             facecolor=fig.get_facecolor(),
@@ -101,7 +106,7 @@ class PltDraw:
 
     def draw_pick_rates_transparent(self, name_us, position):
         matplotlib.use('Agg')
-        position_champions = self.database.get_pick_rate_info(self.patch)
+        position_champions = self.database.get_all_position_pick_rate(self.patch)
         # 전체적인 스타일 설정
         plt.style.use('seaborn-v0_8-dark')
         plt.rc('font', family='Malgun Gothic')
@@ -189,7 +194,10 @@ class PltDraw:
             )
 
         plt.tight_layout()
-        save_path = self.plt_out_dir / "PickRate" / f'pick_rate_analysis_{position}_{name_us}_{self.patch}.png'
+        today_date = datetime.today().date().strftime("%y_%m_%d")
+        save_dir = self.plt_out_dir / "PickRate" / "Basic" / today_date
+        save_dir.mkdir(exist_ok=True, parents=True)
+        save_path = save_dir / f'pick_rate_{position}_{name_us}_{self.patch}.png'
         plt.savefig(
             save_path,
             bbox_inches='tight',
@@ -201,7 +209,7 @@ class PltDraw:
 
     def draw_pick_rates_vertical_transparent(self, name_us, position):
         matplotlib.use('Agg')
-        position_champions = self.database.get_pick_rate_info(self.patch)
+        position_champions = self.database.get_all_position_pick_rate(self.patch)
         plt.style.use('seaborn-v0_8-dark')
         plt.rc('font', family='Malgun Gothic')
 
@@ -288,7 +296,10 @@ class PltDraw:
             )
 
         plt.tight_layout()
-        save_path = self.plt_out_dir / "PickRate" / f'pick_rate_analysis_{position}_{name_us}_{self.patch}.png'
+        today_date = datetime.today().date().strftime("%y_%m_%d")
+        save_dir = self.plt_out_dir / "PickRate" / "Basic" / today_date
+        save_dir.mkdir(exist_ok=True, parents=True)
+        save_path = save_dir / f'pick_rate_analysis_{position}_{name_us}_{self.patch}.png'
         plt.savefig(
             save_path,
             bbox_inches='tight',
@@ -298,7 +309,7 @@ class PltDraw:
         plt.close()
         return save_path
 
-    def draw_gold_series(self, game_id, player_name, line):
+    def draw_gold_series(self, game_id, player_name):
         plt.style.use('seaborn-v0_8-dark')
         plt.rcParams['font.family'] = 'NanumGothic'  # 한글 폰트 설정
         plt.rcParams['axes.unicode_minus'] = False  # 마이너스 기호 깨짐 방지
@@ -407,12 +418,11 @@ class PltDraw:
 
         # 레이아웃 조정
         plt.tight_layout()
-
-        output_path = self.output_dir / 'Series' / 'PickRate' / self.today_date
-        output_path.mkdir(exist_ok=True, parents=True)
-
+        today_date = datetime.today().date().strftime("%y_%m_%d")
+        save_path = self.plt_out_dir / "PickRate" / "Series" / today_date
+        save_path.mkdir(exist_ok=True, parents=True)
         plt.savefig(
-            output_path / f'{game_id}_{player_name}_gold.png',
+            save_path / f'{game_id}_{player_name}_gold.png',
             bbox_inches='tight',
             dpi=300,
             transparent=True
@@ -477,8 +487,9 @@ class PltDraw:
 
         # 데이터 준비
         series_info = self.database.get_match_series_info(game_id, player_name)
-        champion_name = series_info["name_us"][0]
+        champion_name = self.database.get_name_kr(series_info["name_us"][0])
         opp_champion_name = self.database.get_oppnent_player_name(game_id, player_name).get("name_us")
+        opp_champion_name = self.database.get_name_kr(opp_champion_name)
 
         for metric, config in metrics_config.items():
             self.draw_series(
@@ -571,7 +582,7 @@ class PltDraw:
         for i, (pv, ov) in enumerate(zip(player_values, opponent_values)):
             ax.annotate(config['format'](pv * config['div_factor']),
                         (valid_times[i], pv),
-                        textcoords="offset points", xytext=(0, 10),
+                        textcoords="offset points", xytext=(0, 15),
                         ha='center', color='white', fontsize=18)
             ax.annotate(config['format'](ov * config['div_factor']),
                         (valid_times[i], ov),
@@ -582,10 +593,12 @@ class PltDraw:
         plt.tight_layout()
 
         # 저장
-        output_path = self.output_dir / 'Series' / 'PickRate' / self.today_date
-        output_path.mkdir(exist_ok=True, parents=True)
+        today_date = datetime.today().date().strftime("%y_%m_%d")
+        save_dir = self.plt_out_dir / "PickRate" / "Series" / today_date
+        save_dir.mkdir(exist_ok=True, parents=True)
+        save_path = save_dir / f'{game_id}_{player_name}_{metric}.png'
         plt.savefig(
-            output_path / f'{game_id}_{player_name}_{metric}.png',
+            save_path,
             bbox_inches='tight',
             dpi=300,
             transparent=True
@@ -688,10 +701,12 @@ class PltDraw:
         plt.tight_layout()
 
         # 저장
-        output_path = self.output_dir / 'Series' / 'PickRate' / self.today_date
-        output_path.mkdir(exist_ok=True, parents=True)
+        today_date = datetime.today().date().strftime("%y_%m_%d")
+        save_dir = self.plt_out_dir / "PickRate" / "Series" / today_date
+        save_dir.mkdir(exist_ok=True, parents=True)
+        save_path = save_dir / f'{game_id}_{player_name}_kda_combined.png'
         plt.savefig(
-            output_path / f'{game_id}_{player_name}_kda_combined.png',
+            save_path,
             bbox_inches='tight',
             dpi=300,
             transparent=True
@@ -792,10 +807,12 @@ class PltDraw:
         plt.tight_layout()
 
         # 저장
-        output_path = self.output_dir / 'Series' / 'PickRate' / self.today_date
-        output_path.mkdir(exist_ok=True, parents=True)
+        today_date = datetime.today().date().strftime("%y_%m_%d")
+        save_dir = self.plt_out_dir / "PickRate" / "Series" / today_date
+        save_dir.mkdir(exist_ok=True, parents=True)
+        save_path = save_dir / f'{game_id}_{player_name}_economy_combined.png'
         plt.savefig(
-            output_path / f'{game_id}_{player_name}_economy_combined.png',
+            save_path,
             bbox_inches='tight',
             dpi=300,
             transparent=True
@@ -975,3 +992,180 @@ class PltDraw:
     #     result_df['score_breakdown'] = scores.apply(lambda x: x['breakdown'])
     #     print(result_df)
     #     return result_df.sort_values('mvp_score', ascending=False)
+    #
+
+    def draw_radar_chart(self, game_df, player_name):
+        matplotlib.use('Agg')
+        plt.style.use('seaborn-v0_8-dark')
+        plt.rc('font', family='Malgun Gothic')
+        player_df = game_df[game_df["playername"] == player_name].iloc[0]
+        game_id = player_df['gameid']
+        opp_player_df = game_df[(game_df["position"] == player_df['position']) & (game_df['side'] != player_df['side'])].iloc[0]
+        player_name_kr = self.database.get_name_kr(player_df['name_us'])
+        opp_player_name_kr = self.database.get_name_kr(opp_player_df['name_us'])
+
+        base_stats = ['kills', 'deaths', 'assists', 'damagetochampions', 'damagetakenperminute']
+        label_mapping = {
+            'kills': '킬',
+            'deaths': '데스',
+            'assists': '어시스트',
+            'damagetochampions': '가한 피해량',
+            'damagetakenperminute': '분당 받은 피해량',
+            'totalgold': 'CS',
+            'laning_score': '라인전 점수',
+            'visionscore': '비전 스코어',
+            'dragons': '드래곤',
+            'barons': '바론'
+        }
+
+        position = player_df['position']
+        if position in ['mid', 'top', 'bottom']:
+            player_laning = ((player_df['normalized_golddiffat15'] * 0.4) +
+                             (player_df['normalized_xpdiffat15'] * 0.3) +
+                             (player_df['normalized_csdiffat15'] * 0.3))
+            opp_laning = ((opp_player_df['normalized_golddiffat15'] * 0.4) +
+                          (opp_player_df['normalized_xpdiffat15'] * 0.3) +
+                          (opp_player_df['normalized_csdiffat15'] * 0.3))
+
+            stats = base_stats + ['totalgold', 'laning_score']
+            stats_values = {
+                'player': [player_df[stat] for stat in base_stats] + [player_df['totalgold'], player_laning],
+                'opponent': [opp_player_df[stat] for stat in base_stats] + [opp_player_df['totalgold'], opp_laning]
+            }
+
+        elif position == 'jungle':
+            player_team = game_df[(game_df['position'] == "team") & (game_df['side'] == player_df['side'])].iloc[0]
+            opp_team = game_df[(game_df['position'] == "team") & (game_df['side'] == opp_player_df['side'])].iloc[0]
+
+            stats = base_stats + ['dragons', 'barons']
+            stats_values = {
+                'player': [player_df[stat] for stat in base_stats] + [player_team['dragons'], player_team['barons']],
+                'opponent': [opp_player_df[stat] for stat in base_stats] + [opp_team['dragons'], opp_team['barons']]
+            }
+
+        else:  # support
+            player_laning = ((player_df['normalized_golddiffat15'] * 0.4) +
+                             (player_df['normalized_xpdiffat15'] * 0.3) +
+                             (player_df['normalized_csdiffat15'] * 0.3))
+            opp_laning = ((opp_player_df['normalized_golddiffat15'] * 0.4) +
+                          (opp_player_df['normalized_xpdiffat15'] * 0.3) +
+                          (opp_player_df['normalized_csdiffat15'] * 0.3))
+
+            stats = base_stats + ['visionscore', 'laning_score']
+            stats_values = {
+                'player': [player_df[stat] for stat in base_stats] + [player_df['visionscore'], player_laning],
+                'opponent': [opp_player_df[stat] for stat in base_stats] + [opp_player_df['visionscore'], opp_laning]
+            }
+
+        max_values = [max(stats_values['player'][i], stats_values['opponent'][i]) for i in range(len(stats))]
+        normalized_values = {
+            'player': [val / max_val * 0.7 if max_val != 0 else 0 for val, max_val in
+                       zip(stats_values['player'], max_values)],
+            'opponent': [val / max_val * 0.7 if max_val != 0 else 0 for val, max_val in
+                         zip(stats_values['opponent'], max_values)]
+        }
+
+        num_vars = len(stats)
+        angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
+        angles += angles[:1]
+
+        values_player = normalized_values['player']
+        values_player = values_player + [values_player[0]]
+        values_opponent = normalized_values['opponent']
+        values_opponent = values_opponent + [values_opponent[0]]
+        original_values_player = stats_values['player']
+        original_values_opponent = stats_values['opponent']
+
+        fig = plt.figure(figsize=(10, 10), facecolor='none')
+        ax = fig.add_subplot(111, polar=True)
+
+        ax.grid(False)
+        ax.spines['polar'].set_visible(False)
+        ax.set_yticklabels([])
+
+        for r in [0.2, 0.4, 0.6, 0.8, 1.0]:
+            polygon_points = []
+            for angle in angles[:-1]:
+                polygon_points.append([r * np.cos(angle), r * np.sin(angle)])
+            polygon_points.append(polygon_points[0])
+            xs, ys = zip(*polygon_points)
+            plt.plot(angles, [r] * len(angles), '--', color='white', alpha=1)
+
+        # 데이터 플롯
+        ax.fill(angles, values_player, alpha=0.25, color='#3498db')
+        ax.plot(angles, values_player, 'o-', linewidth=2, label=f"{player_df['playername']}({player_name_kr})",
+                color='#3498db')
+
+        ax.fill(angles, values_opponent, alpha=0.25, color='#e74c3c')
+        ax.plot(angles, values_opponent, 'o-', linewidth=2,
+                label=f"{opp_player_df['playername']}({opp_player_name_kr})", color='#e74c3c')
+
+        # 라벨 설정 부분 수정
+        ax.set_xticks(angles[:-1])
+        labels = [label_mapping[stat] for stat in stats]
+        ax.set_xticklabels(labels, color='white', fontsize=20)
+
+        for i in range(len(angles) - 1):
+            angle = angles[i]
+
+            player_val = original_values_player[i]
+            opp_val = original_values_opponent[i]
+
+            # 값 포맷팅
+            if stats[i] in ['kills', 'deaths', 'assists', 'dragons', 'barons']:
+                p_text = f"{int(player_val)}"
+                o_text = f"{int(opp_val)}"
+            elif stats[i] in ['damagetochampions']:
+                p_text = f"{int(player_val / 1000)}k"
+                o_text = f"{int(opp_val / 1000)}k"
+            elif stats[i] in ['damagetakenperminute']:
+                p_text = f"{int(player_val)}"
+                o_text = f"{int(opp_val)}"
+            elif stats[i] == 'laning_score':
+                p_text = f"{player_val:.2f}"
+                o_text = f"{opp_val:.2f}"
+            else:
+                p_text = f"{int(player_val)}"
+                o_text = f"{int(opp_val)}"
+
+            # 오프셋 계산을 위한 값
+            vertical_offset = 0.1
+            horizontal_offset = 0.05
+
+            # 플레이어 값
+            ax.text(angle, values_player[i] + vertical_offset, p_text,
+                    color='#3498db',
+                    ha='center',
+                    va='bottom',
+                    fontsize=20,
+                    fontweight='bold')
+
+            r = values_opponent[i] + vertical_offset
+            x = r * np.cos(angle) + horizontal_offset * np.sin(angle)
+            y = r * np.sin(angle) - horizontal_offset * np.cos(angle)
+
+            new_angle = np.arctan2(y, x)
+            new_r = np.sqrt(x ** 2 + y ** 2)
+
+            ax.text(new_angle, new_r, o_text,
+                    color='#e74c3c',
+                    ha='center',
+                    va='bottom',
+                    fontsize=20,
+                    fontweight='bold')
+
+        plt.legend(loc='upper right', bbox_to_anchor=(0.1, 0.1), fontsize=20, labelcolor='white')
+
+        plt.tight_layout()
+        today_date = datetime.today().date().strftime("%y_%m_%d")
+        save_dir = self.plt_out_dir / "PickRate" / "Basic" / today_date
+        save_dir.mkdir(exist_ok=True, parents=True)
+        save_path = save_dir / f'radar_{game_id}_{position}_{self.patch}.png'
+        plt.savefig(
+            save_path,
+            bbox_inches='tight',
+            dpi=300,
+            transparent=True
+        )
+        plt.close()
+        return save_path
