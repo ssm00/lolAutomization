@@ -20,7 +20,6 @@ class ChampionDetection:
     def __init__(self, database, meta_data):
         self.database = database
         self.anomaly_info = meta_data.anomaly_info
-        self.today_date = datetime.today().date().strftime("%y_%m_%d")
         self.output_dir = Path(__file__).parent.parent / 'PltOutput'
         self.output_dir.mkdir(exist_ok=True, parents=True)
         self.patch = self.set_patch_version(self.anomaly_info)
@@ -84,7 +83,7 @@ class ChampionDetection:
         """
         픽률이 하위 10프로인 챔피언을 픽한 경우
         """
-        position_champions = self.database.get_pick_rate_info(self.patch)
+        position_champions = self.database.get_all_position_pick_rate(self.patch)
         match_info = self.database.get_player_info(self.patch)
         unusual_picks = []
         for index, row in match_info.iterrows():
@@ -161,7 +160,7 @@ class ChampionDetection:
             2. 다른 라인 챔피언 + performance score 가 구린 경우
         """
         for line in self.line_list:
-            df = self.database.get_champion_score(line, self.patch)
+            df = self.database.get_champion_score_by_line(line, self.patch)
             features = ['pick_rate', 'win_rate', 'ban_rate']
             X = df[features].copy()
             performance_score = (
@@ -193,6 +192,7 @@ class ChampionDetection:
             self.draw_performance_scatter(line, result)
             self.database.insert_performance_score(line, result)
 
+
     def draw_performance_scatter(self, line, result):
         plt.figure(figsize=(10, 6))
         plt.rc('font', family='Malgun Gothic')
@@ -222,10 +222,11 @@ class ChampionDetection:
             )
         plt.xlabel('Performance Score (픽률, 승률, 밴률의 종합 점수)')
         plt.ylabel('이상치 점수')
-        plt.title(f'Performance Score 하위 10% 이상치 챔피언, 라인:{line}, 날짜:{self.today_date}')
+        today_date = datetime.today().date().strftime("%y_%m_%d")
+        plt.title(f'Performance Score 하위 10% 이상치 챔피언, 라인:{line}, 날짜:{today_date}')
         plt.legend()
         plt.grid(True, alpha=0.3)
-        output_path = self.output_dir / 'PerformanceScore' / self.today_date
+        output_path = self.output_dir / 'PerformanceScore' / today_date
         output_path.mkdir(exist_ok=True, parents=True)
         plt.savefig(output_path/ f'{line}.png',
                     bbox_inches='tight',
@@ -234,7 +235,7 @@ class ChampionDetection:
         plt.close()
 
     def find_unmatch_line(self):
-        champion_dict_by_line = self.database.get_champion_name_by_line(self.patch)
+        champion_dict_by_line = self.database.get_all_champion_list(self.patch)
         match_info = self.database.get_player_info(self.patch)
 
         off_position_picks = []
