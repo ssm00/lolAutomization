@@ -139,7 +139,7 @@ class Database:
         except Exception as e:
             print(f"{insert_query} \n {values} \n {e}")
 
-    def get_champion_score(self, line, patch):
+    def get_champion_score_by_line(self, line, patch):
         table = f"champion_score_{line}"
         select_query = f"""
             select * from {table} where patch = {patch};"""
@@ -218,7 +218,7 @@ class Database:
         select_query = "select max(patch) from oracle_elixir"
         return self.fetch_one(select_query)
 
-    def get_champion_name_by_line(self, patch):
+    def get_all_champion_list(self, patch):
         position_champions = {}
         positions = ['top', 'jungle', 'mid', 'bottom', 'support']
         for position in positions:
@@ -246,7 +246,7 @@ class Database:
         """
         return pd.read_sql(select_query, self.connection)
 
-    def get_pick_rate_info(self, patch):
+    def get_all_position_pick_rate(self, patch):
         position_champions = {}
         positions = ['top', 'jungle', 'mid', 'bottom', 'support']
         for position in positions:
@@ -382,3 +382,61 @@ class Database:
         select_query = "select * from oracle_elixir where gameid = %s"
         return pd.read_sql(select_query, self.connection, params=game_id)
 
+    def get_name_kr(self, name_us):
+        select_query = "select name_kr from champion_info where ps_name = (%s)"
+        return self.fetch_one(select_query, args=name_us)['name_kr']
+
+    def get_champion_stats(self, name_us, patch, position):
+        select_query = f"select name_us, pick_rate, win_rate, ban_rate, champion_tier from champion_score_{position} where name_us = (%s) and patch = (%s) "
+        result = self.fetch_one(select_query, args=(name_us, patch))
+        position_kr = {"top":"탑", "jungle":"정글", "mid":"미드", "bottom":"바텀", "support":"서포터"}
+        champion_stats = {
+            "라인": position_kr[position],
+            "티어": result['champion_tier'],
+            "승률": result['win_rate'],
+            "픽률": result['pick_rate'],
+            "밴률": result['ban_rate']
+        }
+        return champion_stats
+
+    def get_counter_champion(self, name_us, position, patch):
+        query = """
+               WITH matchups AS (
+                    SELECT 
+                        m1.gameid,
+                        m1.name_us as target_champ,
+                        m1.position as target_pos,
+                        m2.name_us as opponent_champ,
+                        m2.position as opponent_pos,
+                        m1.result as target_won,
+                        m1.golddiffat15,
+                        m1.xpdiffat15,
+                        (m1.killsat15 + m1.assistsat15) / CASE WHEN m1.deathsat15 = 0 THEN 1 ELSE m1.deathsat15 END as target_kda15,
+                        (m2.killsat15 + m2.assistsat15) / CASE WHEN m2.deathsat15 = 0 THEN 1 ELSE m2.deathsat15 END as opponent_kda15
+                    FROM oracle_elixir m1
+                    JOIN oracle_elixir m2 
+                        ON m1.gameid = m2.gameid 
+                        AND m1.side != m2.side
+                        AND m1.position = m2.position
+                    WHERE m1.name_us = %s
+                        AND m1.position = %s
+                        AND m1.patch = %s
+                )
+                SELECT 
+                    opponent_champ,
+                    COUNT(*) as games_played,
+                    ROUND(AVG(CASE WHEN target_won = 1 THEN 1 ELSE 0 END) * 100, 2) as win_rate,
+                    ROUND(AVG(golddiffat15), 2) as avg_gold_diff_15,
+                    ROUND(AVG(xpdiffat15), 2) as avg_xp_diff_15,
+                    ROUND(AVG(target_kda15), 2) - ROUND(AVG(opponent_kda15), 2) as kda_diff
+                FROM matchups
+                GROUP BY opponent_champ
+                ORDER BY win_rate DESC, games_played DESC
+            """
+        results = pd.read_sql(query, self.connection, params=[name_us, position, patch])
+        results['counter_score'] = (
+                results['win_rate'] * 0.4 +
+                results['avg_gold_diff_15'].clip(-2000, 2000) / 20 * 0.3 +
+                results['avg_xp_diff_15'].clip(-2000, 2000) / 20 * 0.3
+        )
+        return results
