@@ -415,7 +415,7 @@ class Database:
                         (m2.killsat15 + m2.assistsat15) / CASE WHEN m2.deathsat15 = 0 THEN 1 ELSE m2.deathsat15 END as opponent_kda15
                     FROM oracle_elixir m1
                     JOIN oracle_elixir m2 
-                        ON m1.gameid = m2.gameid 
+                        ON m1.gameid = m2.gameid
                         AND m1.side != m2.side
                         AND m1.position = m2.position
                     WHERE m1.name_us = %s
@@ -423,14 +423,16 @@ class Database:
                         AND m1.patch = %s
                 )
                 SELECT 
-                    opponent_champ,
+                    m.opponent_champ,
+                    ci.name_kr,
                     COUNT(*) as games_played,
-                    ROUND(AVG(CASE WHEN target_won = 1 THEN 1 ELSE 0 END) * 100, 2) as win_rate,
-                    ROUND(AVG(golddiffat15), 2) as avg_gold_diff_15,
-                    ROUND(AVG(xpdiffat15), 2) as avg_xp_diff_15,
-                    ROUND(AVG(target_kda15), 2) - ROUND(AVG(opponent_kda15), 2) as kda_diff
-                FROM matchups
-                GROUP BY opponent_champ
+                    ROUND(AVG(CASE WHEN m.target_won = 1 THEN 1 ELSE 0 END) * 100, 2) as win_rate,
+                    ROUND(AVG(m.golddiffat15), 2) as avg_gold_diff_15,
+                    ROUND(AVG(m.xpdiffat15), 2) as avg_xp_diff_15,
+                     ROUND(AVG(m.target_kda15), 2) + ROUND(AVG(m.opponent_kda15), 2) as kda_diff
+                FROM matchups m
+                LEFT JOIN champion_info ci ON m.opponent_champ = ci.ps_name  
+                GROUP BY m.opponent_champ, ci.name_kr 
                 ORDER BY win_rate DESC, games_played DESC
             """
         results = pd.read_sql(query, self.connection, params=[name_us, position, patch])
