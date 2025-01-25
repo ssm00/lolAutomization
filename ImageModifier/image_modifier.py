@@ -25,9 +25,10 @@ class PickRate:
         self.background_dir = Path(__file__).parent.parent / "Assets" / "Image" / "background"
         self.pick_rate_assets_dir = Path(__file__).parent.parent / "Assets" / "PickRate"
         self.plt_dir = Path(__file__).parent.parent / "PltOutput"
+        self.output_dir = Path(__file__).parent.parent / "ImageOutput" / "PickRate"
         self.font_path = Path(__file__).parent.parent / "Assets" / "Font" / "Cafe24Ohsquare-v2.0" / "Cafe24Ohsquare-v2.0.ttf"
         self.anton_font_path = Path(__file__).parent.parent / "Assets" / "Font" / "Anton,Noto_Sans_KR" / "Anton" / "Anton-Regular.ttf"
-        self.output_dir = Path(__file__).parent.parent / "ImageOutput" / "PickRate"
+        self.noto_font_path = Path(__file__).parent.parent / "Assets" / "Font" / "Noto_Sans_KR" / "NotoSansKR-VariableFont_wght.ttf"
         self.main_font_size = self.properties.get("main_font_size")
         self.main_line_spacing = self.properties.get("main_line_spacing")
         self.title_font_size = self.properties.get("title_font_size")
@@ -152,27 +153,28 @@ class PickRate:
         background = Image.open(self.background_dir / "background1.png")
         background = self.resize_image_type1(background)
         background = self.add_bottom_gradient(background, 1350)
-        self.add_title_text(background, "추천 경기")
+        self.add_title_text(background, "카운터 픽")
 
         counter_info = self.database.get_counter_champion(name_us, position, self.meta_data.anomaly_info.get("patch"))
         counter_info = counter_info.dropna()
         num_counters = min(len(counter_info), 3)
 
         table = Image.open(self.pick_rate_assets_dir / "5" / f"table{num_counters}.png")
-        background.paste(table, (50, 180), table)
-        background = self.draw_table_5(background, counter_info, num_counters)
+        background.paste(table, (11, 180), table)
+        background = self.draw_table_5(background, player_df, counter_info, num_counters)
+
+        textbox_image = Image.open(self.background_dir / "textbox.png")
+        background.paste(textbox_image, (29, 770), textbox_image)
 
         main_text = "프로필에서 보이는 0.70%라는 픽률 낮은 픽률을 보여주고 있지만, 24.04%라는 높은 밴률을 가르고 있습니다. 미드 포지션에서 밴률이 매우 끼치면은 메타픽으로 판단하고 있다는 것을 보여줍니다. 47.40% 의 승률을 평균적인 스코어지만, 미드의 특성상 개인의 철저한 가르티리온로 플레이 수 있다는 것을 시사합니다."
-        self.draw_line(background,(50,650))
-        self.add_main_text(background, main_text, (50, 680), (980, 600))
-
+        self.add_main_text(background, main_text, (50, 790), (1000, 500))
         background.save(self.output_dir / "7.png")
 
-    def sixth_page(self, match_id, player_name):
+    def sixth_pag_2(self, match_id, player_name):
         game_df = self.database.get_game_data(match_id)
         blue_team = game_df[(game_df['side'] == 'Blue') & (game_df['position'] == 'team')].iloc[0]
         red_team = game_df[(game_df['side'] == 'Red') & (game_df['position'] == 'team')].iloc[0]
-
+        position = game_df[game_df['player_name'] == player_name]
         background = Image.open(self.background_dir / "background1.png")
         background = self.resize_image_type1(background)
         background = self.add_bottom_gradient(background, 2000)
@@ -204,41 +206,87 @@ class PickRate:
 
         background.save(self.output_dir / "8.png")
 
+    def sixth_page(self, match_id, player_name):
+        game_df = self.database.get_game_data(match_id)
+        blue_team = game_df[(game_df['side'] == 'Blue') & (game_df['position'] == 'team')].iloc[0]
+        red_team = game_df[(game_df['side'] == 'Red') & (game_df['position'] == 'team')].iloc[0]
+        position = game_df[game_df['player_name'] == player_name]
+        background = Image.open(self.background_dir / "background1.png")
+        background = self.resize_image_type1(background)
+        background = self.add_bottom_gradient(background, 2000)
+        self.add_title_text(background, "경기 결과")
 
-    def draw_table_5(self, background, counter_info, num_counters):
+        blue_team_icon = Image.open(self.team_icon_dir / f"{blue_team['teamname']}.png")
+        red_team_icon = Image.open(self.team_icon_dir / f"{red_team['teamname']}.png")
+        blue_team_icon = self.resize_image(blue_team_icon, 175, 175)
+        red_team_icon = self.resize_image(red_team_icon, 175, 175)
+
+        background.paste(blue_team_icon, (95,235), blue_team_icon)
+        background.paste(red_team_icon, (95,510), red_team_icon)
+        self.draw_line(background, (80, 460), (890, 5), (255,255,255))
+
+        blue_kda = f"{blue_team['kills']} / {blue_team['deaths']} / {blue_team['assists']}"
+        red_kda = f"{red_team['kills']} / {red_team['deaths']} / {red_team['assists']}"
+        result = blue_team['result']
+        if result == 1:
+            self.add_text_box(background, "승리", 550, 230, 64, "#0989ce")
+            self.add_text_box(background, "패배", 550, 475, 64, "#e24647")
+        else:
+            self.add_text_box(background, "패배", 550, 230, 64, "#e24647")
+            self.add_text_box(background, "승리", 550, 475, 64, "#0989ce")
+        self.add_text_box(background, blue_kda, 430, 310, 64, (255,255,255))
+        self.add_text_box(background, red_kda, 430, 555, 64, (255,255,255))
+
+        main_text = "프로필에서 보이는 0.70%라는 픽률 낮은 픽률을 보여주고 있지만, 24.04%라는 높은 밴률을 가르고 있습니다. 미드 포지션에서 밴률이 매우 끼치면은 메타픽으로 판단하고 있다는 것을 보여줍니다. 47.40% 의 승률을 평균적인 스코어지만, 미드의 특성상 개인의 철저한 가르티리온로 플레이 수 있다는 것을 시사합니다."
+        self.add_main_text(background, main_text, (80, 730), (980, 550))
+
+        background.save(self.output_dir / "8.png")
+
+    def draw_table_5(self, background, player_df, counter_info, num_counters):
         layout = {
-            'start_x': 90,
-            'start_y': 260,
-            'row_height': 127,
+            'my_champion_start_x': 103,
+            'my_champion_start_y': 226,
+            'start_x': 96,
+            'start_y': 416,
+            'row_height': 107,
             'text_offsets': {
-                'winrate': 160,
-                'kda_diff': 400,
-                'counter_score': 600,
-                'games': 800
+                'name_kr': 110,
+                'winrate': 300,
+                'kda_diff': 500,
+                'counter_score': 680,
+                'games': 860
             },
-            'text_y_offset': 5
+            'text_y_offset': 10
         }
         colors = {
-            'default': (255, 255, 255),
-            'positive': '#0aaf9d',
-            'negative': '#ed1b58'
+            'default': "#E2E8F0",
+            'positive': '#22C55E',
+            'negative': '#EF4444'
         }
+        my_champion_kr = self.database.get_name_kr(player_df['name_us'])
+        position_kr_list = {'top':'탑', 'jungle':'정글', 'mid':'미드', 'bottom':'바텀', 'support':'서포터'}
+        my_position_kr = position_kr_list[player_df['position']]
+        my_champion_icon = Image.open(self.champion_icon_dir / f"{player_df['name_us']}.png")
+        my_champion_icon = self.resize_circle(my_champion_icon, 80, 80)
+        background.paste(my_champion_icon, (layout['my_champion_start_x'], layout['my_champion_start_y']), my_champion_icon)
+        self.add_text_box(background, my_champion_kr, layout['my_champion_start_x'] + 120, layout['my_champion_start_y'] - 5, 30, colors['default'], self.noto_font_path)
+        self.add_text_box(background, my_position_kr, layout['my_champion_start_x'] + 120, layout['my_champion_start_y'] + 40, 25, colors['default'], self.noto_font_path)
+
         for i in range(num_counters):
             counter = counter_info.iloc[i]
             current_y = layout['start_y'] + (i * layout['row_height'])
             champ_icon = Image.open(self.champion_icon_dir / f"{counter['opponent_champ']}.png")
-            champ_icon = self.resize_circle(champ_icon, 100, 100)
-            background.paste(champ_icon,
-                             (layout['start_x'], current_y),
-                             champ_icon)
+            champ_icon = self.resize_circle(champ_icon, 68, 68)
+            background.paste(champ_icon, (layout['start_x'], current_y), champ_icon)
             kda_diff = counter['kda_diff']
             if kda_diff > 0:
-                kda_text = f"{abs(kda_diff):.1f}"
+                kda_text = f"+ {abs(kda_diff):.1f}"
                 kda_color = colors['positive']
             else:
-                kda_text = f"{abs(kda_diff):.1f}"
+                kda_text = f"- {abs(kda_diff):.1f}"
                 kda_color = colors['negative']
             text_data = {
+                'name_kr': {'text': f"{counter['name_kr']}", 'color': colors['default']},
                 'winrate': {'text': f"{counter['win_rate']:.1f}%", 'color': colors['default']},
                 'kda_diff': {'text': kda_text, 'color': kda_color},
                 'counter_score': {'text': f"{counter['counter_score']:.1f}", 'color': colors['default']},
@@ -246,30 +294,33 @@ class PickRate:
             }
             for key, data in text_data.items():
                 x = layout['start_x'] + layout['text_offsets'][key]
-                y = current_y + 20
-                self.add_text_box(background, data['text'], x, y, 40, data['color'])
+                y = current_y + layout['text_y_offset']
+                self.add_text_box(background, data['text'], x, y, 30, data['color'], self.noto_font_path)
         return background
 
-    def add_text_box(self, image, text, x, y, font_size=20, color=(0, 0, 0)):
+    def add_text_box(self, image, text, x, y, font_size=20, color=(0, 0, 0), font_path=None):
         draw = ImageDraw.Draw(image)
-        font = ImageFont.truetype(self.font_path, font_size)
+        if font_path is None: font_path = self.font_path
+        font = ImageFont.truetype(font_path, font_size)
         draw.text((x, y), str(text), font=font, fill=color)
 
     def resize_circle(self, image, width, height, stroke_width=2):
-        image = image.resize((width, height))
+        # 이미지 크기를 좀 더 크게 조정하여 안티앨리어싱을 위한 여유 공간 확보
+        resize_ratio = 2
+        temp_width = width * resize_ratio
+        temp_height = height * resize_ratio
+
+        image = image.resize((temp_width, temp_height), Image.Resampling.LANCZOS)
         image = image.convert('RGBA')
-        mask = Image.new('L', (width, height), 0)
+        mask = Image.new('L', (temp_width, temp_height), 0)
         draw = ImageDraw.Draw(mask)
-        draw.ellipse((0, 0, width - 1, height - 1), fill=255)
-        stroke = Image.new('RGBA', (width, height), (0, 0, 0, 0))
-        for x in range(-stroke_width, stroke_width + 1):
-            for y in range(-stroke_width, stroke_width + 1):
-                if x * x + y * y <= stroke_width * stroke_width:
-                    offset = Image.new('RGBA', (width, height), (0, 0, 0, 255))
-                    stroke.paste(offset, (x, y), mask)
-        output = Image.new('RGBA', (width, height), (0, 0, 0, 0))
-        output.paste(stroke, (0, 0))
+        padding = stroke_width * resize_ratio
+        draw.ellipse((padding, padding, temp_width - padding - 1, temp_height - padding - 1),
+                     fill=255)
+        mask = mask.filter(ImageFilter.GaussianBlur(radius=resize_ratio))
+        output = Image.new('RGBA', (temp_width, temp_height), (0, 0, 0, 0))
         output.paste(image, (0, 0), mask)
+        output = output.resize((width, height), Image.Resampling.LANCZOS)
         return output
 
     def split_and_save(self, image, save_path1, save_path2):
@@ -309,7 +360,7 @@ class PickRate:
         draw = ImageDraw.Draw(image)
         x, y = position
         box_width, box_height = box_size
-        #draw.rectangle([x, y, x + box_width, y + box_height], fill=(255, 255, 255))
+        #draw.rectangle([x, y, x + box_width, y + box_height], fill=(255, 255, 255, 30))
         main_font = ImageFont.truetype(self.font_path, self.main_font_size)
         main_text_color = (255, 255, 255)
         words = text.split()
@@ -339,25 +390,19 @@ class PickRate:
         draw = ImageDraw.Draw(image)
         table = Image.open(self.pick_rate_assets_dir / "3" / "table.png")
         image.paste(table, (50, 1100), table)
-        stats_font = ImageFont.truetype(self.font_path, 50)
-        value_font = ImageFont.truetype(self.font_path, 40)
-        stat_title_color = self.black
-        value_color = self.black
-        stats_x = 100
-        stats_y = 1110
-
-        labels = ["라인", "티어", "승률", "픽률", "밴률"]
-        spacing = 177
+        value_font = ImageFont.truetype(self.noto_font_path, 30)
+        value_color = (255,255,255)
+        stats_x = 110
+        stats_y = 1120
         for i, (label, value) in enumerate(stats.items()):
-            draw.text((stats_x + (i * spacing), stats_y), labels[i], font=stats_font, fill=stat_title_color)
             value_text = str(value)
             if label == "티어":
                 value_color = self.tier_color[value_text]
                 value_text = "   "+value_text
             if i >= 2:
-                value_color = self.black
-                value_text = f"{value:.2f}"
-            draw.text((stats_x + (i * 174), stats_y + 77), value_text, font=value_font, fill=value_color)
+                value_color = (255,255,255)
+                value_text = f"{value:.2f}%"
+            draw.text((stats_x + (i * 177), stats_y + 77), value_text, font=value_font, fill=value_color)
         return image
 
     def draw_ban_info(self, background, blue_team, red_team):
@@ -751,3 +796,75 @@ class PickRate:
                         os.remove(file_path)
                 except Exception as e:
                     print(f"오류 발생 ({file_path.name}): {str(e)}")
+
+    def create_champion_comparison(self, size=(800, 400)):
+        # 기본 이미지 생성
+        image = Image.new('RGB', size, color='#0f1525')
+        draw = ImageDraw.Draw(image)
+
+        # 폰트 설정 (시스템에 맞는 폰트 경로 사용 필요)
+        try:
+            title_font = ImageFont.truetype('malgun.ttf', 24)  # 한글 지원 폰트
+            header_font = ImageFont.truetype('malgun.ttf', 18)
+            normal_font = ImageFont.truetype('malgun.ttf', 16)
+        except OSError:
+            # 폰트를 찾을 수 없는 경우 기본 폰트 사용
+            title_font = ImageFont.load_default()
+            header_font = ImageFont.load_default()
+            normal_font = ImageFont.load_default()
+
+        # 헤더 영역 그리기
+        header_color = '#1a1a2e'
+        draw.rectangle([40, 20, 760, 110], fill=header_color, outline='#2d3748', width=1)
+
+        # 챔피언 아이콘 자리 (원)
+        draw.ellipse([70, 35, 130, 95], fill='#4a5568', outline='#c9d4e0', width=2)
+
+        # 헤더 텍스트
+        draw.text((150, 45), "대상 챔피언", fill='#e2e8f0', font=title_font)
+        draw.text((150, 80), "탑 라인", fill='#94a3b8', font=header_font)
+
+        # 컬럼 헤더
+        column_headers = [
+            (130, "상대 챔피언"),
+            (300, "승률"),
+            (450, "교전력"),
+            (600, "매칭수")
+        ]
+
+        for x, text in column_headers:
+            draw.text((x, 140), text, fill='#94a3b8', font=normal_font)
+
+        # 구분선
+        draw.line([40, 130, 760, 130], fill='#2d3748', width=1)
+
+        # 데이터 행 그리기
+        champion_data = [
+            ("다리우스", "65.2%", "+2.3", "30"),
+            ("오른", "45.8%", "-1.5", "25"),
+            ("요릭", "55.3%", "+0.8", "40")
+        ]
+
+        for i, (champ, winrate, combat, matches) in enumerate(champion_data):
+            y = 170 + (i * 80)
+            # 행 배경
+            draw.rectangle([40, y, 760, y + 70], fill='#242442', outline='#2d3748', width=1)
+
+            # 챔피언 아이콘 원
+            draw.ellipse([65, y + 10, 115, y + 60], fill='#4a5568', outline='#60a5fa', width=2)
+
+            # 데이터 텍스트
+            draw.text((130, y + 25), champ, fill='#e2e8f0', font=normal_font)
+
+            # 승률 색상 조정 (높으면 초록, 낮으면 빨강)
+            winrate_color = '#22c55e' if float(winrate[:-1]) > 50 else '#ef4444'
+            draw.text((300, y + 25), winrate, fill=winrate_color, font=normal_font)
+
+            # 교전력 색상 조정
+            combat_color = '#22c55e' if combat.startswith('+') else '#ef4444'
+            draw.text((450, y + 25), combat, fill=combat_color, font=normal_font)
+
+            draw.text((600, y + 25), matches, fill='#94a3b8', font=normal_font)
+        image.save(self.output_dir / "9.png")
+        return image
+
