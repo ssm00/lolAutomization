@@ -26,7 +26,9 @@ class ArticleGenerator:
         self.parsers = {
             'first_page': JsonOutputParser(pydantic_object=FirstPageResponse),
             'second_page': JsonOutputParser(pydantic_object=SecondPageResponse),
-            'third_page': JsonOutputParser(pydantic_object=ThirdPageResponse)
+            'third_page': JsonOutputParser(pydantic_object=ThirdPageResponse),
+            'fourth_page': JsonOutputParser(pydantic_object=FourthPageResponse),
+            'fifth_page': JsonOutputParser(pydantic_object=FifthPageResponse)
         }
         self.first_page_template = PromptTemplate(
             input_variables=["player_name", "champion_name", "position", "team_name", "pick_rate", "kda", "max_chars"],
@@ -112,62 +114,163 @@ class ArticleGenerator:
                 """
         )
 
-        # 세 번째 페이지 프롬프트 템플릿 추가
         self.third_page_template = PromptTemplate(
-            input_variables=["champion_name", "pick_rate", "ban_rate", "win_rate", "position", "tier", "max_chars"],
+            input_variables=["champion_kr_name", "position", "tier", "pick_rate", "ban_rate", "win_rate", "ranking", "max_chars", "patch"],
+            partial_variables={"format_instructions": self.parsers['third_page'].get_format_instructions()},
             template="""
-            다음 챔피언 데이터를 바탕으로 챔피언 분석 기사를 작성해주세요:
-
-            챔피언: {champion_name}
-            포지션: {position}
-            티어: {tier}
-            픽률: {pick_rate}
-            밴률: {ban_rate}
-            승률: {win_rate}
-
-            다음 가이드라인을 따라 작성해주세요:
-            1. 현재 메타에서의 챔피언 위치
-            2. 픽률과 밴률의 의미 분석
-            3. {max_chars}자 이내로 작성
+                다음은 패치 {patch}에서 특이하게 낮은 픽률을 보이는 챔피언의 상세 데이터입니다. 
+                해당 데이터를 바탕으로 ({max_chars})자 이내의 전략적 분석 카드뉴스를 작성해주세요:
             
-            """
+                [챔피언 기본 정보]
+                챔피언명: {champion_kr_name}
+                포지션: {position}
+                티어: {tier}
+            
+                [핵심 지표]
+                승률: {win_rate}%
+                픽률: {pick_rate}% (전체 하위 10% 수준)
+                밴률: {ban_rate}%
+            
+                [분석 요구사항]
+                1. 메타 현황 분석
+                   - 현재 패치 {patch}에서의 챔피언 위치
+                   - 낮은 픽률의 메타적 원인 파악
+                   - 티어 {tier} 수준에서의 평가
+            
+                2. 통계적 의미 분석
+                   - {win_rate}% 승률이 가지는 의미
+                   - {pick_rate}% 픽률과 {ban_rate}% 밴률의 상관관계
+            
+                3. 실전적 가치 평가
+                   - {position} 포지션에서의 특화된 역할
+                   - 현재 메타에서의 활용 가능성
+                   - 승률과 픽률의 격차가 주는 시사점
+            
+                4. 전략적 함의
+                   - 낮은 픽률 속 숨겨진 가치
+                   - 특정 상황에서의 강점
+                   - 향후 메타 변화에 따른 전망
+
+                [작성 지침]
+                - 공백 포함 정확히 {max_chars}자 이내로 작성
+                - '~습니다', '~했는데요' 체를 사용한 자연스러운 서술
+                - 낮은 픽률이 가진 특별한 의미에 초점
+                - 데이터를 기반으로 한 객관적 분석
+                - 프로 경기의 특수성을 고려한 해석
+                - 한국어 챔피언명({champion_kr_name}) 사용
+                - 독자가 이해하기 쉬운 설명 방식
+
+                응답은 반드시 다음 JSON 형식을 따라야 합니다:
+                {{
+                    "text": "상세한 분석 내용 ({max_chars}자 이내)"
+                }}
+
+                {format_instructions}
+                """
         )
 
-        # 네 번째 페이지 프롬프트 템플릿 추가
         self.fourth_page_template = PromptTemplate(
-            input_variables=["performance_stats", "gold_stats", "exp_stats", "max_chars"],
+            input_variables=[
+                "champion_kr_name", "opp_kr_name", "position",
+                "gold_diff_data", "exp_diff_data",
+                "time_frames", "max_chars", "stats", "stats_values", "label_mapping"
+            ],
+            partial_variables={"format_instructions": self.parsers['fourth_page'].get_format_instructions()},
             template="""
-            다음 성과지표를 바탕으로 분석 기사를 작성해주세요:
+                다음은 {champion_kr_name}와 {opp_kr_name}의 {position} 포지션 대결 데이터입니다.
+                시간대별 성장 비교와 자원 획득 차이를 분석하여 ({max_chars})자 이내의 심층 분석 기사를 작성해주세요:
 
-            성과지표: {performance_stats}
-            골드 데이터: {gold_stats}
-            경험치 데이터: {exp_stats}
+                [대결 구도]
+                아군 챔피언: {champion_kr_name}
+                상대 챔피언: {opp_kr_name}
+                포지션: {position}
+                상대와의 차이 칼럼: {stats}
+                상대와의 차이 데이터: {stats_values}
+                한글 칼럼 명: {label_mapping}
 
-            다음 가이드라인을 따라 작성해주세요:
-            1. 선수의 라인전 운영 능력 분석
-            2. 자원 활용도 평가
-            3. {max_chars}자 이내로 작성
-            """
+                [시간대별 데이터]
+                시간 구간: {time_frames} (10분, 15분, 20분, 25분)
+                골드 획득 추이: {gold_diff_data}
+                경험치 획득 추이: {exp_diff_data}
+
+                [분석 요구사항]
+                1. 시간대별 시계열 데이터 분석
+                - 초반 라인전 분석 (0~10분)
+                - 중반 운영 비교 (10~20분)
+                - 후반 영향력 비교 (20~25분)
+                   
+                2. 상대 챔피언과의 스탯 비교
+                - kill, death, assist
+                - 중반 운영 비교 (10~20분)
+                - 후반 영향력 비교 (20~25분)
+
+                [작성 지침]
+                - 정확히 {max_chars}자 이내로 작성
+                - '~습니다', '~했는데요' 체를 사용한 자연스러운 서술
+                - 시간대별 변화를 중심으로 한 순차적 분석
+                - 두 챔피언의 특성을 고려한 맥락적 해석
+                - 전문성과 가독성의 균형 유지
+                - 핵심 변곡점에 대한 명확한 설명
+
+                응답은 반드시 다음 JSON 형식을 따라야 합니다:
+                {{
+                    "text": "상세한 분석 내용 ({max_chars}자 이내)"
+                }}
+                {format_instructions}
+                """
         )
 
-        # 다섯 번째 페이지 프롬프트 템플릿 추가
         self.fifth_page_template = PromptTemplate(
-            input_variables=["champion_name", "counter_picks", "counter_stats", "max_chars"],
+            input_variables=[
+                "champion_kr_name", "opp_kr_name", "position",
+                "gold_diff_data", "exp_diff_data",
+                "time_frames", "max_chars", "stats", "stats_values", "label_mapping"
+            ],
+            partial_variables={"format_instructions": self.parsers['fifth_page'].get_format_instructions()},
             template="""
-            다음 카운터 픽 데이터를 바탕으로 분석 기사를 작성해주세요:
+                    다음은 {champion_kr_name}와 {opp_kr_name}의 {position} 포지션 대결 데이터입니다.
+                    시간대별 성장 비교와 자원 획득 차이를 분석하여 ({max_chars})자 이내의 심층 분석 기사를 작성해주세요:
 
-            챔피언: {champion_name}
-            카운터 챔피언: {counter_picks}
-            상대 전적: {counter_stats}
+                    [대결 구도]
+                    아군 챔피언: {champion_kr_name}
+                    상대 챔피언: {opp_kr_name}
+                    포지션: {position}
+                    상대와의 차이 칼럼: {stats}
+                    상대와의 차이 데이터: {stats_values}
+                    한글 칼럼 명: {label_mapping}
 
-            다음 가이드라인을 따라 작성해주세요:
-            1. 카운터 챔피언들의 특징 분석
-            2. 상대 전적의 의미 해석
-            3. {max_chars}자 이내로 작성
-            """
+                    [시간대별 데이터]
+                    시간 구간: {time_frames} (10분, 15분, 20분, 25분)
+                    골드 획득 추이: {gold_diff_data}
+                    경험치 획득 추이: {exp_diff_data}
+
+                    [분석 요구사항]
+                    1. 시간대별 시계열 데이터 분석
+                    - 초반 라인전 분석 (0~10분)
+                    - 중반 운영 비교 (10~20분)
+                    - 후반 영향력 비교 (20~25분)
+
+                    2. 상대 챔피언과의 스탯 비교
+                    - kill, death, assist
+                    - 중반 운영 비교 (10~20분)
+                    - 후반 영향력 비교 (20~25분)
+
+                    [작성 지침]
+                    - 정확히 {max_chars}자 이내로 작성
+                    - '~습니다', '~했는데요' 체를 사용한 자연스러운 서술
+                    - 시간대별 변화를 중심으로 한 순차적 분석
+                    - 두 챔피언의 특성을 고려한 맥락적 해석
+                    - 전문성과 가독성의 균형 유지
+                    - 핵심 변곡점에 대한 명확한 설명
+
+                    응답은 반드시 다음 JSON 형식을 따라야 합니다:
+                    {{
+                        "text": "상세한 분석 내용 ({max_chars}자 이내)"
+                    }}
+                    {format_instructions}
+                """
         )
 
-        # 여섯 번째 페이지 프롬프트 템플릿 추가
         self.sixth_page_template = PromptTemplate(
             input_variables=["match_result", "team_stats", "player_contribution", "max_chars"],
             template="""
@@ -185,7 +288,10 @@ class ArticleGenerator:
         )
         self.chains = {
             'first_page': self.first_page_template | self.llm | self.parsers['first_page'],
-            'second_page': self.second_page_template | self.llm | self.parsers['second_page']
+            'second_page': self.second_page_template | self.llm | self.parsers['second_page'],
+            'third_page': self.third_page_template | self.llm | self.parsers['third_page'],
+            'fourth_page': self.fourth_page_template | self.llm | self.parsers['fourth_page'],
+            'fifth_page': self.fifth_page_template | self.llm | self.parsers['fifth_page']
         }
 
     def calculate_text_box_size(self, font_path, font_size, box_width, box_height):
@@ -204,7 +310,7 @@ class ArticleGenerator:
     def generate_first_page_article(self, game_df, player_name, max_chars):
         player_data = game_df[game_df['playername'] == player_name].iloc[0]
         champion_kr_name = self.database.get_name_kr(player_data['name_us'])
-        champion_stats = self.database.get_champion_stats(
+        champion_stats = self.database.get_champion_rate_table(
             player_data['name_us'],
             self.meta_data.anomaly_info.get("patch"),
             player_data['position']
@@ -257,77 +363,50 @@ class ArticleGenerator:
         result = self.chains['second_page'].invoke(article_data)
         return result['text']
 
-    def generate_third_page_article(self, match_id, player_name, font_size, box_width, box_height):
+    def generate_third_page_article(self, game_df, player_name, max_chars):
+        player_data = game_df[game_df['playername'] == player_name].iloc[0]
+        patch = self.meta_data.anomaly_info.get("patch")
+        champion_stats = self.database.get_champion_pick_rate_info(
+            player_data['name_us'],
+            patch,
+            player_data['position']
+        )
+        article_data = {"champion_kr_name": champion_stats['name_kr'],
+                        "position": player_data['position'],
+                        "tier": champion_stats['tier'],
+                        "pick_rate": champion_stats['pick_rate'],
+                        "ban_rate": champion_stats['ban_rate'],
+                        "win_rate": champion_stats['win_rate'],
+                        "ranking": champion_stats['ranking'],
+                        "patch": patch,
+                        "max_chars": max_chars
+                        }
+        result = self.chains['third_page'].invoke(article_data)
+        return result['text']
+
+
+    def generate_fourth_page_article(self, game_df, player_name, max_chars):
         try:
-            max_chars = self.calculate_text_box_size(font_size, box_width, box_height)
-            self.max_chars['third_page'] = min(max_chars, self.max_chars['third_page'])
-
-            game_df = self.database.get_game_data(match_id)
             player_data = game_df[game_df['playername'] == player_name].iloc[0]
-            champion_kr_name = self.database.get_champion_kr_name(player_data['name_us'])
-
-            champion_stats = self.database.get_champion_stats(
-                player_data['name_us'],
-                self.meta_data.anomaly_info.get("patch"),
-                player_data['position']
+            opp_mask = (game_df['position'] == player_data['position']) & (game_df['playername'] != player_name)
+            opp_player_name = game_df[opp_mask]['playername'].iloc[0]
+            game_id = player_data['gameid']
+            radar_stats = self.database.get_radar_stats(game_id, player_name)
+            comparison_data = self.database.get_player_comparison_series(
+                player_data['gameid'],
+                player_name,
+                opp_player_name
             )
-
-            article = self.chains['third_page'].run({
-                'champion_name': champion_kr_name,
-                'position': player_data['position'],
-                'tier': champion_stats['티어'],
-                'pick_rate': f"{champion_stats['픽률']:.1f}%",
-                'ban_rate': f"{champion_stats['밴률']:.1f}%",
-                'win_rate': f"{champion_stats['승률']:.1f}%",
-                'max_chars': self.max_chars['third_page']
-            })
-
-            if len(article) > self.max_chars['third_page']:
-                article = article[:self.max_chars['third_page']] + "..."
-            return article
-        except Exception as e:
-            print(f"오류 발생 위치: {__file__}, 라인: {e.__traceback__.tb_lineno}")
-            print(f"오류 타입: {type(e).__name__}")
-            print(f"오류 내용: {str(e)}")
-            return "기사 생성에 실패했습니다."
-
-    def generate_fourth_page_article(self, match_id, player_name, font_size, box_width, box_height):
-        try:
-            max_chars = self.calculate_text_box_size(font_size, box_width, box_height)
-            self.max_chars['fourth_page'] = min(max_chars, self.max_chars['fourth_page'])
-
-            game_df = self.database.get_game_data(match_id)
-            player_data = game_df[game_df['playername'] == player_name].iloc[0]
-
-            performance_stats = {
-                'kills': player_data['kills'],
-                'deaths': player_data['deaths'],
-                'assists': player_data['assists'],
-                'damage_share': f"{player_data['damageshare']:.1f}%"
+            print(radar_stats)
+            article_data = {
+                **comparison_data,
+                'stats': radar_stats['stats'],
+                'stats_values': radar_stats['stats_values'],
+                'label_mapping': radar_stats['label_mapping'],
+                'max_chars': max_chars
             }
-
-            gold_stats = {
-                'total_gold': player_data['totalgold'],
-                'earned_gpm': player_data['earned_gpm'],
-                'gold_share': f"{player_data['earnedgoldshare']:.1f}%"
-            }
-
-            exp_stats = {
-                'xp_diff_10': player_data['xpdiffat10'],
-                'xp_diff_15': player_data['xpdiffat15'],
-                'xp_diff_20': player_data['xpdiffat20']
-            }
-
-            article = self.chains['fourth_page'].run({
-                'performance_stats': str(performance_stats),
-                'gold_stats': str(gold_stats),
-                'exp_stats': str(exp_stats),
-                'max_chars': self.max_chars['fourth_page']
-            })
-
-            if len(article) > self.max_chars['fourth_page']:
-                article = article[:self.max_chars['fourth_page']] + "..."
-            return article
+            result = self.chains['fourth_page'].invoke(article_data)
+            return result['text']
         except Exception as e:
             print(f"오류 발생 위치: {__file__}, 라인: {e.__traceback__.tb_lineno}")
             print(f"오류 타입: {type(e).__name__}")
