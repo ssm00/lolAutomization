@@ -20,7 +20,7 @@ class ArticleGenerator:
         )
         self.llm = ChatOpenAI(
             temperature=0.7,
-            model_name=os.getenv('MODEL_NAME', 'gpt-3.5-turbo'),
+            model_name=os.getenv('MODEL_NAME', 'gpt-4o-mini'),
             callbacks=[tracer]
         )
         self.parsers = {
@@ -222,50 +222,50 @@ class ArticleGenerator:
 
         self.fifth_page_template = PromptTemplate(
             input_variables=[
-                "champion_kr_name", "opp_kr_name", "position",
-                "gold_diff_data", "exp_diff_data",
-                "time_frames", "max_chars", "stats", "stats_values", "label_mapping"
+                "player_name", "player_champion_kr", "position", "counters", "max_chars"
             ],
             partial_variables={"format_instructions": self.parsers['fifth_page'].get_format_instructions()},
             template="""
-                    다음은 {champion_kr_name}와 {opp_kr_name}의 {position} 포지션 대결 데이터입니다.
-                    시간대별 성장 비교와 자원 획득 차이를 분석하여 ({max_chars})자 이내의 심층 분석 기사를 작성해주세요:
+                    당신은 프로게임 분석 전문가입니다.
+                    다음은 {player_champion_kr}가 {position} 포지션에서 상대하기 쉬운 챔피언의 데이터입니다.
+                    이 데이터를 바탕으로 {player_champion_kr}를 아군 챔피언으로 추천하는 상세한 분석 글을 작성해주십시오.
+                  
+                    [카운터 정보]
+                    - 아군 챔피언: {player_champion_kr}
+                    - 상대 하기 쉬운 챔피언: {counters}
+                    - 포지션: {position}
+                    - 상대하기 쉬운 챔피언 세부 정보:
+                       - name_kr: 챔피언 한글 이름
+                       - win_rate: 아군 챔피언의 승률
+                       - games_played: 총 대전 게임 수
+                       - kda_diff: (아군 챔피언 KDA - 상대하기 쉬운 챔피언 KDA) 라인전 평균 KDA (양수일 수록 우위)
+                       - counter_score: 카운터 점수 (자체적으로 계산한 승률, 골드 차이, 경험치 차이 종합)
+                       
+                    [작성 방향]
+                    1. 챔피언 추천 근거
+                       - {player_champion_kr}가 상대하기 쉬운 챔피언들의 공통된 특징
+                       - 각각의 상대 챔피언을 상대로 {player_champion_kr}가 가지는 이점
+                       - 프로 경기 데이터 기반의 구체적인 승률과 KDA 우위 분석
+                    
+                    2. 실전 활용 전략
+                       - {player_champion_kr}의 강점을 극대화하는 운영 방법
+                       - 상대 챔피언별 맞춤형 상대법
+                       - 팀 구성에서 {player_champion_kr}가 기여할 수 있는 역할
+                       
+                    3. 챔피언 추천
+                       - 상대하기 쉬운 챔피언이 등장한 경우 {player_champion_kr}의 사용을 추천하는 문장
 
-                    [대결 구도]
-                    아군 챔피언: {champion_kr_name}
-                    상대 챔피언: {opp_kr_name}
-                    포지션: {position}
-                    상대와의 차이 칼럼: {stats}
-                    상대와의 차이 데이터: {stats_values}
-                    한글 칼럼 명: {label_mapping}
-
-                    [시간대별 데이터]
-                    시간 구간: {time_frames} (10분, 15분, 20분, 25분)
-                    골드 획득 추이: {gold_diff_data}
-                    경험치 획득 추이: {exp_diff_data}
-
-                    [분석 요구사항]
-                    1. 시간대별 시계열 데이터 분석
-                    - 초반 라인전 분석 (0~10분)
-                    - 중반 운영 비교 (10~20분)
-                    - 후반 영향력 비교 (20~25분)
-
-                    2. 상대 챔피언과의 스탯 비교
-                    - kill, death, assist
-                    - 중반 운영 비교 (10~20분)
-                    - 후반 영향력 비교 (20~25분)
-
-                    [작성 지침]
-                    - 정확히 {max_chars}자 이내로 작성
-                    - '~습니다', '~했는데요' 체를 사용한 자연스러운 서술
-                    - 시간대별 변화를 중심으로 한 순차적 분석
-                    - 두 챔피언의 특성을 고려한 맥락적 해석
-                    - 전문성과 가독성의 균형 유지
-                    - 핵심 변곡점에 대한 명확한 설명
+                    [작성 요령]
+                       - 정확히 {max_chars}자 이내로 작성
+                       - '~습니다', '~했습니다' 체를 사용한 자연스러운 서술
+                       - 구체적인 통계 수치를 활용한 설득력 있는 분석
+                       - 챔피언들의 고유한 특성을 고려한 맥락적 해석
+                       - 전문 용어와 일반적 설명의 적절한 조화
 
                     응답은 반드시 다음 JSON 형식을 따라야 합니다:
                     {{
                         "text": "상세한 분석 내용 ({max_chars}자 이내)"
+                        "chars": "생성한 text의 length"
                     }}
                     {format_instructions}
                 """
@@ -397,7 +397,6 @@ class ArticleGenerator:
                 player_name,
                 opp_player_name
             )
-            print(radar_stats)
             article_data = {
                 **comparison_data,
                 'stats': radar_stats['stats'],
@@ -413,23 +412,32 @@ class ArticleGenerator:
             print(f"오류 내용: {str(e)}")
             return "기사 생성에 실패했습니다."
 
-    def generate_fifth_page_article(self, match_id, player_name):
+    def generate_fifth_page_article(self, match_id, player_name, max_chars):
         game_df = self.database.get_game_data(match_id)
         player_data = game_df[game_df['playername'] == player_name].iloc[0]
-
-        counter_info = self.database.get_counter_champion(
-            player_data['name_us'],
-            player_data['position'],
-            self.meta_data.anomaly_info.get("patch")
-        )
-
+        counter_info = self.database.get_counter_champion(player_data['name_us'], player_data['position'], self.meta_data.anomaly_info.get("patch"))
+        player_champion_kr = self.database.get_name_kr(player_data['name_us'])
+        top_counters = counter_info.head(3)
         try:
-            article = self.chains['fifth_page'].run({
-                'champion_name': player_data['name_kr'],
-                'counter_picks': str(counter_info['name_kr'].tolist()),
-                'counter_stats': str(counter_info[['win_rate', 'counter_score']].to_dict())
-            })
-            return article
+            article_data = {
+                'player_name': player_name,
+                'player_champion_kr': player_champion_kr,
+                'position': player_data['position'],
+                'max_chars': max_chars,
+                'counters': [
+                    {
+                        'name_kr': row['name_kr'],
+                        'win_rate': row['win_rate'],
+                        'games_played': row['games_played'],
+                        'kda_diff': row['kda_diff'],
+                        'counter_score': row['counter_score'],
+                    }
+                    for _, row in top_counters.iterrows()
+                ]
+            }
+            result = self.chains['fifth_page'].invoke(article_data)
+            print(result)
+            return result['text']
         except Exception as e:
             print(f"오류 발생 위치: {__file__}, 라인: {e.__traceback__.tb_lineno}")
             print(f"오류 내용: {str(e)}")
