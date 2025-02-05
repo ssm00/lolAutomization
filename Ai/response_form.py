@@ -1,5 +1,4 @@
-
-from langchain_core.pydantic_v1 import BaseModel, Field
+from pydantic import BaseModel, Field
 from typing import Dict, List
 
 class FirstPageResponse(BaseModel):
@@ -7,12 +6,14 @@ class FirstPageResponse(BaseModel):
 
 
 class SecondPageResponse(BaseModel):
-    team_analysis: str = Field(description="팀 분석")
-    ban_pick_strategy: str = Field(description="밴픽 전략 분석")
-    player_performance: str = Field(description="선수 성과 분석")
-    key_points: List[str] = Field(description="주요 포인트")
+    text: str = Field(description="분석")
 
 class ThirdPageResponse(BaseModel):
-    champion_overview: str = Field(description="챔피언 개요")
-    meta_analysis: str = Field(description="메타 분석")
-    statistics: Dict = Field(description="통계 데이터")
+    text: str = Field(description="분석")
+
+class FourthPageResponse(BaseModel):
+    text: str = Field(description="분석")
+
+class FifthPageResponse(BaseModel):
+    text: str = Field(description="분석")
+    chars: str = Field(description="생성한 text의 length")
