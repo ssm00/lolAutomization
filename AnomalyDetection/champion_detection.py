@@ -19,10 +19,10 @@ class ChampionDetection:
 
     def __init__(self, database, meta_data):
         self.database = database
-        self.anomaly_info = meta_data.anomaly_info
+        self.basic_info = meta_data.basic_info
         self.output_dir = Path(__file__).parent.parent / 'PltOutput'
         self.output_dir.mkdir(exist_ok=True, parents=True)
-        self.patch = self.set_patch_version(self.anomaly_info)
+        self.patch = self.set_patch_version(self.basic_info)
         self.line_list = ["top","mid","jungle","bottom","support"]
 
     def set_patch_version(self, anomaly_info):
