@@ -9,12 +9,13 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(os.path.dirname(
 
 
 class Database:
-    def __init__(self, db_info, logger):
+    def __init__(self, db_info, meta_data, logger):
         self.db_info = db_info
         self.logger = logger
         self.connection = None
         self.cursor = None
         self.connect()
+        self.year = meta_data.basic_info.get("year")
 
     def connect(self):
         try:
@@ -58,9 +59,10 @@ class Database:
         columns = ', '.join(df.columns)
         placeholders = ', '.join(['%s'] * len(df.columns))
         insert_query = f"""
-                            INSERT INTO oracle_elixir ({columns})
+                            INSERT INTO oracle_elixir_{self.year} ({columns})
                             VALUES ({placeholders})
                         """
+
         for index, row in df.iterrows():
             try:
                 values = [self.process_value(val) for val in row]
@@ -199,7 +201,7 @@ class Database:
                 p.win_rate,
                 p.pick_rate,
                 p.is_outlier
-            FROM oracle_elixir o
+            FROM oracle_elixir_{self.year} o
             JOIN performance_score p 
                 ON o.name_us = p.name_us
                 AND o.patch = p.patch
@@ -215,7 +217,7 @@ class Database:
         return pd.read_sql(select_query, self.connection)
 
     def get_latest_patch(self):
-        select_query = "select max(patch) from oracle_elixir"
+        select_query = f"select max(patch) from oracle_elixir_{self.year}"
         return self.fetch_one(select_query)
 
     def get_all_champion_list(self, patch):
@@ -229,7 +231,7 @@ class Database:
     def get_player_info(self, patch):
         select_query = f"""
         SELECT *
-        FROM oracle_elixir 
+        FROM oracle_elixir_{self.year} 
         WHERE position != 'team'
         AND patch = {patch}
         ORDER BY gameid, side
@@ -238,9 +240,9 @@ class Database:
         return match_info
 
     def get_team_info(self):
-        select_query = """
+        select_query = f"""
         select * 
-        from oracle_elixir
+        from oracle_elixir_{self.year}
         where position = "team"
         order by gameid, game_date
         """
@@ -341,23 +343,23 @@ class Database:
             opp_killsat25,
             opp_assistsat25,
             opp_deathsat25
-        from oracle_elixir 
+        from oracle_elixir_{self.year} 
         where gameid = %s and playername = %s
         """
         return pd.read_sql(select_query, self.connection, params=(game_id, player_name))
 
     def get_oppnent_player_name(self, game_id, player_name):
-        select_query = """
+        select_query = f"""
         select name_us, playername 
-        from oracle_elixir oe
+        from oracle_elixir_{self.year} oe
         where gameid = (%s) 
-        and position = (select position as p from oracle_elixir where gameid = (%s) and playername = (%s))
+        and position = (select position as p from oracle_elixir_{self.year} where gameid = (%s) and playername = (%s))
         and playername != (%s) 
         """
         return self.fetch_one(select_query, args=(game_id, game_id, player_name, player_name))
 
     def get_mvp_base_data(self, game_id):
-        query = """
+        query = f"""
                     SELECT 
                         gameid, position, playername, name_us as champion,
                         kills, deaths, assists, teamkills, firstbloodkill, firstbloodassist,
@@ -369,7 +371,7 @@ class Database:
                         monsterkillsenemyjungle, visionscore, gspd,
                         golddiffat15, xpdiffat15, csdiffat15,
                         result
-                    FROM oracle_elixir 
+                    FROM oracle_elixir_{self.year} 
                     WHERE gameid = %s 
                     """
         return pd.read_sql(query, self.connection, params=(game_id,))
@@ -379,14 +381,14 @@ class Database:
         return pd.read_sql(query, self.connection)
 
     def get_game_data(self, game_id):
-        select_query = "select * from oracle_elixir where gameid = %s"
+        select_query = f"select * from oracle_elixir_{self.year} where gameid = %s"
         return pd.read_sql(select_query, self.connection, params=game_id)
 
     def get_name_kr(self, name_us):
         select_query = "select name_kr from champion_info where ps_name = (%s)"
         return self.fetch_one(select_query, args=name_us)['name_kr']
 
-    def get_champion_stats(self, name_us, patch, position):
+    def get_champion_rate_table(self, name_us, patch, position):
         select_query = f"select name_us, pick_rate, win_rate, ban_rate, champion_tier from champion_score_{position} where name_us = (%s) and patch = (%s) "
         result = self.fetch_one(select_query, args=(name_us, patch))
         position_kr = {"top":"탑", "jungle":"정글", "mid":"미드", "bottom":"바텀", "support":"서포터"}
@@ -399,8 +401,22 @@ class Database:
         }
         return champion_stats
 
+    def get_champion_pick_rate_info(self, name_us, patch, position):
+        select_query = f"select name_kr, ranking, pick_rate, win_rate, ban_rate, champion_tier from champion_score_{position} where name_us = (%s) and patch = (%s) "
+        result = self.fetch_one(select_query, args=(name_us, patch))
+        champion_stats = {
+            "position": position,
+            "name_kr": result['name_kr'],
+            "ranking": result['ranking'],
+            "pick_rate": result['pick_rate'],
+            "win_rate": result['win_rate'],
+            "ban_rate": result['ban_rate'],
+            "tier": result['champion_tier']
+        }
+        return champion_stats
+
     def get_counter_champion(self, name_us, position, patch):
-        query = """
+        query = f"""
                WITH matchups AS (
                     SELECT 
                         m1.gameid,
@@ -413,8 +429,8 @@ class Database:
                         m1.xpdiffat15,
                         (m1.killsat15 + m1.assistsat15) / CASE WHEN m1.deathsat15 = 0 THEN 1 ELSE m1.deathsat15 END as target_kda15,
                         (m2.killsat15 + m2.assistsat15) / CASE WHEN m2.deathsat15 = 0 THEN 1 ELSE m2.deathsat15 END as opponent_kda15
-                    FROM oracle_elixir m1
-                    JOIN oracle_elixir m2 
+                    FROM oracle_elixir_{self.year} m1
+                    JOIN oracle_elixir_{self.year} m2 
                         ON m1.gameid = m2.gameid
                         AND m1.side != m2.side
                         AND m1.position = m2.position
@@ -441,4 +457,318 @@ class Database:
                 results['avg_gold_diff_15'].clip(-2000, 2000) / 20 * 0.3 +
                 results['avg_xp_diff_15'].clip(-2000, 2000) / 20 * 0.3
         )
+        results = results.dropna()
         return results
+
+
+    def get_player_comparison_series(self, game_id, player_name, opponent_player_name):
+        query = f"""
+               SELECT 
+                   p.playername,
+                   p.position,
+                   p.name_us as champion_name,
+                   n.name_kr as champion_kr_name, 
+                   p.goldat10, p.goldat15, p.goldat20, p.goldat25,
+                   p.golddiffat10, p.golddiffat15, p.golddiffat20, p.golddiffat25,
+                   p.xpat10, p.xpat15, p.xpat20, p.xpat25,
+                   p.xpdiffat10, p.xpdiffat15, p.xpdiffat20, p.xpdiffat25,
+                   p.damagetochampions,
+                   p.damageshare,
+                   p.earnedgoldshare
+
+               FROM oracle_elixir_{self.year} p
+               LEFT JOIN champion_info n ON p.name_us = n.ps_name
+               WHERE p.gameid = %(game_id)s 
+               AND p.playername IN (%(player1)s, %(player2)s)
+           """
+
+        df = pd.read_sql(
+            query,
+            self.connection,
+            params={
+                'game_id': game_id,
+                'player1': player_name,
+                'player2': opponent_player_name
+            }
+        )
+        player_data = df[df['playername'] == player_name].iloc[0]
+        opponent_player_data = df[df['playername'] == opponent_player_name].iloc[0]
+        time_frames = [10, 15, 20, 25]
+        gold_diff_data = {
+            f"{t}min": {
+                player_name: int(player_data[f'goldat{t}']) if not pd.isna(player_data[f'goldat{t}']) else None,
+                opponent_player_name: int(opponent_player_data[f'goldat{t}']) if not pd.isna(opponent_player_data[f'goldat{t}']) else None,
+                 'diff': int(player_data[f'golddiffat{t}']) if not pd.isna(player_data[f'golddiffat{t}']) else None
+            }
+            for t in time_frames
+            if not (pd.isna(df.iloc[0][f'goldat{t}']) and pd.isna(df.iloc[1][f'goldat{t}']))
+        }
+        exp_diff_data = {
+            f"{t}min": {
+                player_name: int(player_data[f'xpat{t}']) if not pd.isna(player_data[f'xpat{t}']) else None,
+                opponent_player_name: int(opponent_player_data[f'xpat{t}']) if not pd.isna(opponent_player_data[f'xpat{t}']) else None,
+                'diff': int(player_data[f'xpdiffat{t}']) if not pd.isna(player_data[f'xpdiffat{t}']) else None
+            }
+            for t in time_frames
+            if not (pd.isna(df.iloc[0][f'xpat{t}']) and pd.isna(df.iloc[1][f'xpat{t}']))
+        }
+        line_kr = {"top": "탑", "jungle": "정글", "mid": "미드", "bottom": "원딜", "support": "서포터", }
+        formatted_data = {
+            'champion_kr_name': player_data['champion_kr_name'],
+            'opp_kr_name': opponent_player_data['champion_kr_name'],
+            'position': line_kr[df.iloc[0]['position']],
+            'time_frames': list(gold_diff_data.keys()),
+            'gold_diff_data': gold_diff_data,
+            'exp_diff_data': exp_diff_data
+        }
+        return formatted_data
+
+    def get_radar_stats(self, game_id, player_name):
+        game_df = self.get_game_data(game_id)
+        player_df = game_df[game_df["playername"] == player_name].iloc[0]
+        opp_player_df = game_df[(game_df["position"] == player_df['position']) & (game_df['side'] != player_df['side'])].iloc[0]
+        player_name_kr = self.get_name_kr(player_df['name_us'])
+        opp_player_name_kr = self.get_name_kr(opp_player_df['name_us'])
+
+        base_stats = ['kills', 'deaths', 'assists', 'damagetochampions', 'damagetakenperminute']
+        label_mapping = {
+            'kills': '킬',
+            'deaths': '데스',
+            'assists': '어시스트',
+            'damagetochampions': '가한 피해량',
+            'damagetakenperminute': '분당 받은 피해량',
+            'totalgold': '골드 획득',
+            'laning_score': '라인전 점수',
+            'visionscore': '시야 점수',
+            'dragons': '드래곤',
+            'barons': '바론'
+        }
+
+        position = player_df['position']
+        if position in ['mid', 'top', 'bottom']:
+            player_laning = ((player_df['golddiffat15'] * 0.4) +
+                             (player_df['xpdiffat15'] * 0.3) +
+                             (player_df['csdiffat15'] * 0.3))
+            opp_laning = ((opp_player_df['golddiffat15'] * 0.4) +
+                          (opp_player_df['xpdiffat15'] * 0.3) +
+                          (opp_player_df['csdiffat15'] * 0.3))
+            stats = base_stats + ['totalgold', 'laning_score']
+            stats_values = {
+                'player': [player_df[stat] for stat in base_stats] + [player_df['totalgold'], player_laning],
+                'opponent': [opp_player_df[stat] for stat in base_stats] + [opp_player_df['totalgold'], opp_laning]
+            }
+
+        elif position == 'jungle':
+            player_team = game_df[(game_df['position'] == "team") & (game_df['side'] == player_df['side'])].iloc[0]
+            opp_team = game_df[(game_df['position'] == "team") & (game_df['side'] == opp_player_df['side'])].iloc[0]
+
+            stats = base_stats + ['dragons', 'barons']
+            stats_values = {
+                'player': [player_df[stat] for stat in base_stats] + [player_team['dragons'], player_team['barons']],
+                'opponent': [opp_player_df[stat] for stat in base_stats] + [opp_team['dragons'], opp_team['barons']]
+            }
+
+        else:  # support
+            player_laning = ((player_df['golddiffat15'] * 0.4) +
+                             (player_df['xpdiffat15'] * 0.3) +
+                             (player_df['csdiffat15'] * 0.3))
+            opp_laning = ((opp_player_df['golddiffat15'] * 0.4) +
+                          (opp_player_df['xpdiffat15'] * 0.3) +
+                          (opp_player_df['csdiffat15'] * 0.3))
+
+            stats = base_stats + ['visionscore', 'laning_score']
+            stats_values = {
+                'player': [player_df[stat] for stat in base_stats] + [player_df['visionscore'], player_laning],
+                'opponent': [opp_player_df[stat] for stat in base_stats] + [opp_player_df['visionscore'], opp_laning]
+            }
+        max_values = [max(stats_values['player'][i], stats_values['opponent'][i]) for i in range(len(stats))]
+        normalized_values = {
+            'player': [val / max_val * 0.7 if max_val != 0 else 0 for val, max_val in
+                       zip(stats_values['player'], max_values)],
+            'opponent': [val / max_val * 0.7 if max_val != 0 else 0 for val, max_val in
+                         zip(stats_values['opponent'], max_values)]
+        }
+
+        return {
+            'game_id': game_id,
+            'position': position,
+            'stats': stats,
+            'label_mapping': label_mapping,
+            'stats_values': stats_values,
+            'normalized_values': normalized_values,
+            'player_names': {
+                'player': f"{player_df['playername']}({player_name_kr})",
+                'opponent': f"{opp_player_df['playername']}({opp_player_name_kr})"
+            }
+        }
+
+    def update_patch_info(self, info):
+        query = """
+                INSERT INTO patch_info (patch, title, url, description, patch_date)
+                VALUES (%(patch)s, %(title)s, %(url)s, %(description)s, %(patch_date)s)
+                ON DUPLICATE KEY UPDATE
+                    title = VALUES(title),
+                    url = VALUES(url),
+                    description = VALUES(description),
+                    patch_date = VALUES(patch_date)
+            """
+        patch_date = datetime.strptime(info['date'], "%Y-%m-%dT%H:%M:%S.%fZ")
+        params = {
+            'patch': info['version'],
+            'title': info['title'],
+            'url': info['url'],
+            'description': info['description'],
+            'patch_date': patch_date
+        }
+        self.cursor.execute(query, params)
+        self.commit()
+
+
+    def get_patch_url_list(self):
+        query = "select patch, url from patch_info"
+        return self.fetch_all(query)
+
+    def get_mvp_player(self, game_df):
+        if game_df is None or game_df.empty:
+            return None
+        mvp_scores = self.calculate_mvp_score(game_df)
+        mvp_player = {
+            'name_kr': mvp_scores.iloc[0]['name_kr'],
+            'playername': mvp_scores.iloc[0]['playername'],
+            'mvp_score': round(mvp_scores.iloc[0]['mvp_score'], 2)
+        }
+        return mvp_player
+
+    def calculate_mvp_score(self, df):
+        position_weights = {
+            'top': {
+                'combat': 1.7,
+                'economy': 1.4,
+                'vision': 0.5,
+                'objective': 0.8,
+                'laning': 1.1
+            },
+            'mid': {
+                'combat': 2.0,
+                'economy': 1.6,
+                'vision': 0.5,
+                'objective': 0.6,
+                'laning': 0.8
+            },
+            'bottom': {
+                'combat': 1.8,
+                'economy': 1.8,
+                'vision': 0.4,
+                'objective': 0.5,
+                'laning': 1.0
+            },
+            'jungle': {
+                'combat': 1.6,
+                'economy': 0.8,
+                'vision': 0.9,
+                'objective': 1.7,
+                'laning': 0.5
+            },
+            'support': {
+                'combat': 1.4,
+                'economy': 0.4,
+                'vision': 1.8,
+                'objective': 0.8,
+                'laning': 1.1
+            }
+        }
+
+        team_data = df[df['position'] == 'team'].copy()
+        player_data = df[df['position'] != 'team'].copy()
+
+        def normalize_stats(group):
+            stats_to_normalize = [
+                'kills', 'deaths', 'assists', 'cspm', 'damageshare', 'earnedgoldshare',
+                'vspm', 'wcpm', 'wpm', 'damagetakenperminute', 'damagemitigatedperminute',
+                'monsterkillsenemyjungle', 'visionscore', 'gspd',
+                'golddiffat15', 'xpdiffat15', 'csdiffat15'
+            ]
+
+            for stat in stats_to_normalize:
+                if stat in group.columns:
+                    max_val = group[stat].max()
+                    min_val = group[stat].min()
+                    if max_val != min_val:
+                        group[f'normalized_{stat}'] = (group[stat] - min_val) / (max_val - min_val)
+                    else:
+                        group[f'normalized_{stat}'] = 0.5
+            return group
+        player_data = normalize_stats(player_data)
+        mvp_scores = []
+        for _, player in player_data.iterrows():
+            position = player['position'].lower()
+            weights = position_weights[position]
+
+            combat_score = (
+                                   (player['normalized_kills'] * 0.15) +
+                                   ((1 - player['normalized_deaths']) * 0.15) +
+                                   (player['normalized_assists'] * 0.1) +
+                                   (player['normalized_damageshare'] * 0.4) +
+                                   (player['normalized_damagemitigatedperminute'] * 0.2)
+                           ) * weights['combat']
+
+            economy_score = (
+                                    (player['normalized_cspm'] * 0.4) +
+                                    (player['normalized_earnedgoldshare'] * 0.6)
+                            ) * weights['economy']
+
+            vision_score = (
+                                   (player['normalized_visionscore'] * 0.5) +
+                                   (player['normalized_wcpm'] * 0.3) +
+                                   (player['normalized_wpm'] * 0.2)
+                           ) * weights['vision']
+
+            laning_score = (
+                                   (player['normalized_golddiffat15'] * 0.4) +
+                                   (player['normalized_xpdiffat15'] * 0.3) +
+                                   (player['normalized_csdiffat15'] * 0.3)
+                           ) * weights['laning']
+
+            team_row = team_data[team_data['result'] == player['result']].iloc[0]
+            objective_participation = 0
+
+            max_dragons = 4
+            max_barons = 2
+            max_towers = 11
+            max_heralds = 2
+            tower_score = min(team_row['towers'] / max_towers, 1.0) * 0.25
+            dragon_score = min(team_row['dragons'] / max_dragons, 1.0) * 0.35
+            baron_score = min(team_row['barons'] / max_barons, 1.0) * 0.25
+            herald_score = min(team_row['heralds'] / max_heralds, 1.0) * 0.15
+            objective_participation = tower_score + dragon_score + baron_score + herald_score
+            objective_score = objective_participation * weights['objective']
+            score_breakdown = {
+                'combat': combat_score,
+                'economy': economy_score,
+                'vision': vision_score,
+                'objective': objective_score,
+                'laning': laning_score
+            }
+
+            final_score = sum(score_breakdown.values())
+
+            if player['result']:
+                final_score *= 1.1
+
+            mvp_scores.append({
+                'playername': player['playername'],
+                'champion': player['name_us'],
+                'name_kr': self.get_name_kr(player['name_us']),
+                'position': position,
+                'mvp_score': final_score
+            })
+
+        mvp_df = pd.DataFrame(mvp_scores)
+        ideal_max_score = 5.5
+        mvp_df['mvp_score'] = mvp_df['mvp_score'] / ideal_max_score
+        scaling_factor = 8.0
+        power_factor = 1.2
+        mvp_df['mvp_score'] = (mvp_df['mvp_score'] * power_factor) * scaling_factor
+        mvp_df['mvp_score'] = mvp_df['mvp_score'].clip(0, 10)
+        mvp_df = mvp_df.sort_values('mvp_score', ascending=False)
+        return mvp_df
