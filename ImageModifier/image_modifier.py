@@ -1,20 +1,19 @@
 import os
 import textwrap
-
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageFilter
 import numpy as np
 from pathlib import Path
 import re as regex
 from datetime import datetime
-from Ai.api_call import GenAiAPI
+from Ai.article_generator import ArticleGenerator
 from AnomalyDetection.champion_detection import ChampionDetection
 from util.commonException import CommonError, ErrorCode
 from AnomalyDetection.plt_draw import PltDraw
-
+import pandas as pd
 
 class PickRate:
 
-    def __init__(self, database, meta_data, gen_api):
+    def __init__(self, database, meta_data, article_generator):
         self.database = database
         self.meta_data = meta_data
         self.properties = meta_data.image_modifier_info
@@ -26,7 +25,8 @@ class PickRate:
         self.pick_rate_assets_dir = Path(__file__).parent.parent / "Assets" / "PickRate"
         self.plt_dir = Path(__file__).parent.parent / "PltOutput"
         self.output_dir = Path(__file__).parent.parent / "ImageOutput" / "PickRate"
-        self.font_path = Path(__file__).parent.parent / "Assets" / "Font" / "Cafe24Ohsquare-v2.0" / "Cafe24Ohsquare-v2.0.ttf"
+        self.title_font_path = Path(__file__).parent.parent / "Assets" / "Font" / "Cafe24Ohsquare-v2.0" / "Cafe24Ohsquare-v2.0.ttf"
+        self.main_font_path = Path(__file__).parent.parent / "Assets" / "Font" / "Noto_Sans_KR" / "static" / "NotoSansKR-Bold.ttf"
         self.anton_font_path = Path(__file__).parent.parent / "Assets" / "Font" / "Anton,Noto_Sans_KR" / "Anton" / "Anton-Regular.ttf"
         self.noto_font_path = Path(__file__).parent.parent / "Assets" / "Font" / "Noto_Sans_KR" / "NotoSansKR-VariableFont_wght.ttf"
         self.main_font_size = self.properties.get("main_font_size")
@@ -35,7 +35,7 @@ class PickRate:
         self.black = self.properties.get("black")
         self.tier_color = self.properties.get("tier_color")
         self.plt_draw = PltDraw(database, meta_data)
-        self.gen_api = gen_api
+        self.article_generator = ArticleGenerator(database, meta_data)
 
     def first_page(self, match_id, player_name):
         background_path = self.pick_rate_assets_dir / "1" / "background.png"
@@ -55,10 +55,10 @@ class PickRate:
         background.paste(player_image, (64, 295), player_image)
         background.paste(champion_icon, (555, 294), champion_icon)
         background = self.add_top_gradient(background, 745)
-
-        self.add_first_page_title(background, "픽률 ^0.1프로^의 뽀삐?", 65, 790)
-
-        background.save(self.output_dir / "1.png")
+        box_size = (948, 220)
+        text = self.article_generator.generate_first_page_article(game_df, player_name, 15)
+        self.add_first_page_title(background, text, 65, 790)
+        self.save_image(background, match_id, "1")
 
     def second_page(self, match_id, player_name):
         background_path = self.pick_rate_assets_dir / "2" / "background.png"
@@ -71,50 +71,24 @@ class PickRate:
         background = self.resize_image_type1(background)
         self.add_title_text(background, "경기정보")
 
+        self.draw_result_table(background, blue_team, red_team, (40, 200))
+
+        mvp_score = self.database.calculate_mvp_score(game_df)
         table = Image.open(table_path)
         table = self.add_gradient_border(table,9)
-        background.paste(table, (40, 300), table)
+        background.paste(table, (40, 360), table)
         draw = ImageDraw.Draw(background)
-        font = ImageFont.truetype(self.font_path, 20)
-
         self.draw_ban_info(background, blue_team, red_team)
-        self.draw_table_info(background, blue_team, red_team, draw, font)
+        self.draw_table_info(background, blue_team, red_team, draw, mvp_score)
 
-        main_text = "프로필에서 보이는 0.70%라는 픽률 낮은 픽률을 보여주고 있지만, 24.04%라는 높은 밴률을 가르고 있습니다. 미드 포지션에서 밴률이 매우 끼치면은 메타픽으로 판단하고 있다는 것을 보여줍니다. 47.40% 의 승률을 평균적인 스코어지만, 미드의 특성상 개인의 철저한 가르티리온로 플레이 수 있다는 것을 시사합니다."
-        self.add_main_text(background, main_text, (50, 830), (980, 400))
+        box_size = (980,400)
+        max_chars = self.calculate_text_max_chars(self.main_font_path, self.main_font_size, box_size)
+        main_text = self.article_generator.generate_second_page_article(game_df, player_name, max_chars)
+        self.add_main_text(background, main_text, (50, 890), box_size)
+        self.save_image(background, match_id, "2")
 
-        background.save(self.output_dir / "2.png")
 
     def third_page(self, match_id, player_name):
-        game_df = self.database.get_game_data(match_id)
-        player_df = game_df[game_df['playername'] == player_name].iloc[0]
-        name_us = player_df['name_us']
-        champion_background = Image.open(self.champion_background_dir / f"{name_us}.png")
-        champion_background = self.resize_image_type2(champion_background)
-        champion_background = self.add_bottom_gradient(champion_background,2500)
-
-        self.add_title_text(champion_background, "챔피언 픽률")
-
-        champion_icon = Image.open(self.champion_icon_dir / f"{name_us}.png")
-        champion_icon = self.resize_image(champion_icon, 175, 175)
-        champion_icon = self.add_gradient_border(champion_icon, 20)
-        champion_background.paste(champion_icon, (50, 200), champion_icon)
-
-        main_text = "프로필에서 보이는 0.70%라는 픽률 낮은 픽률을 보여주고 있지만, 24.04%라는 높은 밴률을 가르고 있습니다. 미드 포지션에서 밴률이 매우 끼치면은 메타픽으로 판단하고 있다는 것을 보여줍니다. 47.40% 의 승률을 평균적인 스코어지만, 미드의 특성상 개인의 철저한 가르티리온로 플레이 수 있다는 것을 시사합니다."
-        self.draw_line(champion_background, (50,385))
-
-        champion_background = self.add_main_text(champion_background, main_text, (50,410))
-        champion_stats = self.database.get_champion_stats(name_us, self.meta_data.anomaly_info.get("patch"), player_df['position'])
-        champion_background = self.add_page3_table(champion_background, champion_stats)
-        save_path = self.plt_draw.draw_pick_rates_transparent(name_us, player_df['position'])
-
-        pick_rate_graph = Image.open(save_path)
-        pick_rate_graph = self.resize_image(pick_rate_graph, 1050, 1050)
-        champion_background.paste(pick_rate_graph, (1130, 150), pick_rate_graph)
-
-        self.split_and_save(champion_background, self.output_dir / "3.png", self.output_dir / "4.png")
-
-    def fourth_page(self, match_id, player_name):
         game_df = self.database.get_game_data(match_id)
         player_df = game_df[game_df['playername'] == player_name].iloc[0]
         name_us = player_df['name_us']
@@ -124,10 +98,11 @@ class PickRate:
         self.add_title_text(background, "성과지표 비교")
         self.draw_line(background, (50, 170))
 
-        main_text = "프로필에서 보이는 0.70%라는 픽률 낮은 픽률을 보여주고 있지만, 24.04%라는 높은 밴률을 가르고 있습니다. 미드 포지션에서 밴률이 매우 끼치면은 메타픽으로 판단하고 있다는 것을 보여줍니다. 47.40% 의 승률을 평균적인 스코어지만, 미드의 특성상 개인의 철저한 가르티리온로 플레이 수 있다는 것을 시사합니다."
+        max_chars = self.calculate_text_max_chars(self.main_font_path, self.main_font_size, (1000, 500))
+        main_text = self.article_generator.generate_third_page_article(game_df, player_name, max_chars)
         self.add_main_text(background, main_text, (50, 190), (1000,500))
 
-        radar_chart_path = self.plt_draw.draw_radar_chart(game_df, player_name)
+        radar_chart_path = self.plt_draw.draw_radar_chart(match_id, player_name)
         radar_chart = Image.open(radar_chart_path)
         radar_chart = self.resize_image(radar_chart, 800, 630)
 
@@ -142,7 +117,38 @@ class PickRate:
         background.paste(gold, (1124, 50), gold)
         background.paste(exp, (1124, 675), exp)
 
-        self.split_and_save(background, self.output_dir / "5.png", self.output_dir / "6.png")
+        self.split_and_save(background,  match_id, "3", "4")
+
+
+    def fourth_page(self, match_id, player_name):
+        game_df = self.database.get_game_data(match_id)
+        player_df = game_df[game_df['playername'] == player_name].iloc[0]
+        name_us = player_df['name_us']
+        champion_background = Image.open(self.champion_background_dir / f"{name_us}.png")
+        champion_background = self.resize_image_type2(champion_background)
+        champion_background = self.add_bottom_gradient(champion_background,2500)
+
+        self.add_title_text(champion_background, "챔피언 픽률")
+
+        champion_icon = Image.open(self.champion_icon_dir / f"{name_us}.png")
+        champion_icon = self.resize_image(champion_icon, 175, 175)
+        champion_icon = self.add_gradient_border(champion_icon, 20)
+        champion_background.paste(champion_icon, (50, 200), champion_icon)
+
+        self.draw_line(champion_background, (50,385))
+
+        max_chars = self.calculate_text_max_chars(self.main_font_path, self.main_font_size, (1000, 700))
+        main_text = self.article_generator.generate_fourth_page_article(game_df, player_name, max_chars)
+        champion_background = self.add_main_text(champion_background, main_text, (50,410))
+        champion_stats = self.database.get_champion_rate_table(name_us, self.meta_data.basic_info.get("patch"), player_df['position'])
+        champion_background = self.add_pickrate_info_table(champion_background, champion_stats)
+        save_path = self.plt_draw.draw_pick_rates_transparent(name_us, player_df['position'])
+
+        pick_rate_graph = Image.open(save_path)
+        pick_rate_graph = self.resize_image(pick_rate_graph, 1050, 1050)
+        champion_background.paste(pick_rate_graph, (1130, 150), pick_rate_graph)
+
+        self.split_and_save(champion_background,  match_id, "5", "6")
 
     def fifth_page(self, match_id, player_name):
         game_df = self.database.get_game_data(match_id)
@@ -155,20 +161,19 @@ class PickRate:
         background = self.add_bottom_gradient(background, 1350)
         self.add_title_text(background, "카운터 픽")
 
-        counter_info = self.database.get_counter_champion(name_us, position, self.meta_data.anomaly_info.get("patch"))
-        counter_info = counter_info.dropna()
-        num_counters = min(len(counter_info), 3)
+        counter_info = self.database.get_counter_champion(name_us, position, self.meta_data.basic_info.get("patch"))
 
-        table = Image.open(self.pick_rate_assets_dir / "5" / f"table{num_counters}.png")
+        table = Image.open(self.pick_rate_assets_dir / "5" / f"table3.png")
         background.paste(table, (11, 180), table)
-        background = self.draw_table_5(background, player_df, counter_info, num_counters)
+        background = self.draw_table_5(background, player_df, counter_info)
 
         textbox_image = Image.open(self.background_dir / "textbox.png")
         background.paste(textbox_image, (29, 770), textbox_image)
 
-        main_text = "프로필에서 보이는 0.70%라는 픽률 낮은 픽률을 보여주고 있지만, 24.04%라는 높은 밴률을 가르고 있습니다. 미드 포지션에서 밴률이 매우 끼치면은 메타픽으로 판단하고 있다는 것을 보여줍니다. 47.40% 의 승률을 평균적인 스코어지만, 미드의 특성상 개인의 철저한 가르티리온로 플레이 수 있다는 것을 시사합니다."
+        max_chars = self.calculate_text_max_chars(self.main_font_path, self.main_font_size, (1000, 500))
+        main_text = self.article_generator.generate_fifth_page_article(match_id, player_name, max_chars)
         self.add_main_text(background, main_text, (50, 790), (1000, 500))
-        background.save(self.output_dir / "7.png")
+        self.save_image(background, match_id, 7)
 
     def sixth_pag_2(self, match_id, player_name):
         game_df = self.database.get_game_data(match_id)
@@ -204,7 +209,7 @@ class PickRate:
         main_text = "프로필에서 보이는 0.70%라는 픽률 낮은 픽률을 보여주고 있지만, 24.04%라는 높은 밴률을 가르고 있습니다. 미드 포지션에서 밴률이 매우 끼치면은 메타픽으로 판단하고 있다는 것을 보여줍니다. 47.40% 의 승률을 평균적인 스코어지만, 미드의 특성상 개인의 철저한 가르티리온로 플레이 수 있다는 것을 시사합니다."
         self.add_main_text(background, main_text, (80, 730), (980, 550))
 
-        background.save(self.output_dir / "8.png")
+        self.save_image(background, match_id, 8)
 
     def sixth_page(self, match_id, player_name):
         game_df = self.database.get_game_data(match_id)
@@ -240,9 +245,38 @@ class PickRate:
         main_text = "프로필에서 보이는 0.70%라는 픽률 낮은 픽률을 보여주고 있지만, 24.04%라는 높은 밴률을 가르고 있습니다. 미드 포지션에서 밴률이 매우 끼치면은 메타픽으로 판단하고 있다는 것을 보여줍니다. 47.40% 의 승률을 평균적인 스코어지만, 미드의 특성상 개인의 철저한 가르티리온로 플레이 수 있다는 것을 시사합니다."
         self.add_main_text(background, main_text, (80, 730), (980, 550))
 
-        background.save(self.output_dir / "8.png")
+        self.save_image(background, match_id, 8)
 
-    def draw_table_5(self, background, player_df, counter_info, num_counters):
+    def draw_result_table(self, background, blue_team, red_team, position):
+        result_table = Image.open(self.pick_rate_assets_dir / "2" / "result.png")
+        result_draw = ImageDraw.Draw(result_table)
+        font = ImageFont.truetype(self.main_font_path, 18)
+        blue_team_name = blue_team['teamname'].iloc[0]
+        blue_bbox = font.getbbox(blue_team_name)
+        blue_text_width = blue_bbox[2] - blue_bbox[0]
+        blue_x = 300 - (blue_text_width / 2)
+        result_draw.text((blue_x, 20), blue_team_name, font=font, fill='#AAA9B7')
+        red_team_name = red_team['teamname'].iloc[0]
+        red_bbox = font.getbbox(red_team_name)
+        red_text_width = red_bbox[2] - red_bbox[0]
+        red_x = 700 - (red_text_width / 2)
+        result_draw.text((red_x, 20), red_team_name, font=font, fill='#AAA9B7')
+        background.paste(result_table, position, result_table)
+
+    def calculate_text_max_chars(self, font_path, font_size, box_size):
+        font = ImageFont.truetype(font_path, font_size)
+        box_width, box_height = box_size
+        test_img = Image.new('RGB', (1, 1))
+        draw = ImageDraw.Draw(test_img)
+        test_chars = "가나다라마바사아자차카타파하"
+        avg_char_width = sum(draw.textlength(char, font=font) for char in test_chars) / len(test_chars)
+        line_height = font_size * 1.1
+        chars_per_line = int(box_width / avg_char_width)
+        available_lines = int(box_height / line_height)
+        max_chars = int(chars_per_line * available_lines)
+        return max(1, max_chars)
+
+    def draw_table_5(self, background, player_df, counter_info):
         layout = {
             'my_champion_start_x': 103,
             'my_champion_start_y': 226,
@@ -271,7 +305,7 @@ class PickRate:
         background.paste(my_champion_icon, (layout['my_champion_start_x'], layout['my_champion_start_y']), my_champion_icon)
         self.add_text_box(background, my_champion_kr, layout['my_champion_start_x'] + 120, layout['my_champion_start_y'] - 5, 30, colors['default'], self.noto_font_path)
         self.add_text_box(background, my_position_kr, layout['my_champion_start_x'] + 120, layout['my_champion_start_y'] + 40, 25, colors['default'], self.noto_font_path)
-
+        num_counters = min(len(counter_info), 3)
         for i in range(num_counters):
             counter = counter_info.iloc[i]
             current_y = layout['start_y'] + (i * layout['row_height'])
@@ -300,7 +334,7 @@ class PickRate:
 
     def add_text_box(self, image, text, x, y, font_size=20, color=(0, 0, 0), font_path=None):
         draw = ImageDraw.Draw(image)
-        if font_path is None: font_path = self.font_path
+        if font_path is None: font_path = self.main_font_path
         font = ImageFont.truetype(font_path, font_size)
         draw.text((x, y), str(text), font=font, fill=color)
 
@@ -323,11 +357,21 @@ class PickRate:
         output = output.resize((width, height), Image.Resampling.LANCZOS)
         return output
 
-    def split_and_save(self, image, save_path1, save_path2):
+    def split_and_save(self, image, match_id, file_name1, file_name2):
+        today_date = datetime.today().date().strftime("%y_%m_%d")
+        output_path1 = self.output_dir / today_date / match_id / f"{file_name1}.png"
+        output_path2 = self.output_dir / today_date / match_id / f"{file_name2}.png"
+        os.makedirs(output_path1.parent, exist_ok=True)
         top_image = image.crop((0, 0, 1080, 1350))
         bottom_image = image.crop((1080, 0, 2160, 1350))
-        top_image.save(save_path1)
-        bottom_image.save(save_path2)
+        top_image.save(output_path1)
+        bottom_image.save(output_path2)
+
+    def save_image(self, image, match_id, file_name):
+        today_date = datetime.today().date().strftime("%y_%m_%d")
+        output_path = self.output_dir / today_date / match_id / f"{file_name}.png"
+        os.makedirs(output_path.parent, exist_ok=True)
+        image.save(output_path)
 
     def draw_line(self, image, position, box_size=(440,15), color=("#bedcff")):
         x, y = position
@@ -337,7 +381,7 @@ class PickRate:
 
     def add_main_text_line_split_by_dot(self, image, text, position, box_size=(900,700)):
         draw = ImageDraw.Draw(image)
-        main_font = ImageFont.truetype(self.font_path, self.main_font_size)
+        main_font = ImageFont.truetype(self.main_font_path, self.main_font_size)
         x,y = position
         max_width, max_height = box_size
         #draw.rectangle([x, y, x + max_width, y + max_height], fill=(1,1,1))
@@ -356,12 +400,88 @@ class PickRate:
             y += draw.textbbox((0, 0), line, font=main_font)[3] + self.main_line_spacing
         return image
 
+    def add_main_text1(self, image, text, position, box_size=(1000, 700)):
+        draw = ImageDraw.Draw(image)
+        x, y = position
+        box_width, box_height = box_size
+        draw.rectangle([x, y, x + box_width, y + box_height], fill=(255, 255, 255, 30))
+        main_font = ImageFont.truetype(self.main_font_path, self.main_font_size)
+        main_text_color = (255, 255, 255)
+
+        # 텍스트를 더 작은 단위로 나누기
+        segments = []
+        current_segment = ""
+
+        # 한글과 영문을 모두 고려한 텍스트 분할
+        for char in text:
+            if char.isspace():
+                if current_segment:
+                    segments.append(current_segment)
+                    current_segment = ""
+                continue
+            current_segment += char
+            # 현재 세그먼트가 너무 길어지면 분할
+            if draw.textlength(current_segment, font=main_font) > box_width * 0.3:
+                segments.append(current_segment)
+                current_segment = ""
+        if current_segment:
+            segments.append(current_segment)
+
+        # 줄 구성
+        lines = []
+        current_line = []
+        current_width = 0
+        space_width = draw.textlength(" ", font=main_font)
+
+        for segment in segments:
+            segment_width = draw.textlength(segment, font=main_font)
+            # 새 줄의 시작인 경우
+            if not current_line:
+                current_line.append(segment)
+                current_width = segment_width
+                continue
+
+            # 현재 줄에 세그먼트를 추가할 수 있는 경우
+            if current_width + space_width + segment_width <= box_width * 0.98:  # 98%까지 사용
+                current_line.append(segment)
+                current_width += space_width + segment_width
+            else:
+                # 줄이 충분히 차지 않았다면 더 좁은 간격으로 시도
+                if current_width < box_width * 0.9:
+                    compressed_space = (box_width - current_width) / (len(current_line) - 1)
+                    lines.append((current_line, compressed_space))
+                else:
+                    lines.append((current_line, space_width))
+                current_line = [segment]
+                current_width = segment_width
+
+        if current_line:
+            lines.append((current_line, space_width))
+
+        # 텍스트 그리기
+        line_height = self.main_font_size + self.main_line_spacing
+        current_y = y
+
+        for line, space_width in lines:
+            if current_y > position[1] + box_height:
+                break
+
+            # 현재 줄의 시작 위치 계산
+            current_x = x
+            for i, segment in enumerate(line):
+                draw.text((current_x, current_y), segment, font=main_font, fill=main_text_color)
+                current_x += draw.textlength(segment, font=main_font) + space_width
+
+            current_y += line_height
+
+        return image
+
     def add_main_text(self, image, text, position, box_size=(1000, 700)):
         draw = ImageDraw.Draw(image)
         x, y = position
         box_width, box_height = box_size
         #draw.rectangle([x, y, x + box_width, y + box_height], fill=(255, 255, 255, 30))
-        main_font = ImageFont.truetype(self.font_path, self.main_font_size)
+        main_font = ImageFont.truetype(self.main_font_path, self.main_font_size)
         main_text_color = (255, 255, 255)
         words = text.split()
         lines = []
@@ -386,7 +506,7 @@ class PickRate:
                 break
         return image
 
-    def add_page3_table(self, image, stats):
+    def add_pickrate_info_table(self, image, stats):
         draw = ImageDraw.Draw(image)
         table = Image.open(self.pick_rate_assets_dir / "3" / "table.png")
         image.paste(table, (50, 1100), table)
@@ -407,7 +527,7 @@ class PickRate:
 
     def draw_ban_info(self, background, blue_team, red_team):
         # Ban 챔피언 이미지 위치
-        ban_y = 200
+        ban_y = 260
         ban_size = 100
         ban_spacing = 100
         blue_bans = [blue_team.iloc[0][f'ban{i}'] for i in range(1, 6)]
@@ -433,10 +553,10 @@ class PickRate:
                 except Exception as e:
                     print(f"레드팀 ban 이미지 처리 중 오류: {e}")
 
-    def draw_table_info(self, background, blue_team, red_team, draw, font):
+    def draw_table_info(self, background, blue_team, red_team, draw, mvp_score):
+        font = ImageFont.truetype(self.main_font_path, 20)
         positions = ['top', 'jungle', 'mid', 'bottom', 'support']
-        # table text 위치
-        row_start_y = 365
+        row_start_y = 425
         row_height = 91
         left_side = {
             'champion': 60,
@@ -453,25 +573,19 @@ class PickRate:
         for i, position in enumerate(positions):
             current_y = row_start_y + (i * row_height)
             blue_pos_data = blue_team[blue_team['position'] == position].iloc[0]
-
             blue_champion_icon = Image.open(self.champion_icon_dir / f"{blue_pos_data['name_us']}.png")
             blue_champion_icon = self.resize_image(blue_champion_icon, 100, 60)
             blue_champion_icon = self.add_gradient_border(blue_champion_icon, 10)
             background.paste(blue_champion_icon, (left_side['champion'], current_y))
 
-            draw.text((left_side['player'], current_y + 20),
-                      str(blue_pos_data['playername']),
-                      font=font, fill='white')
-
             blue_kda = f"{blue_pos_data['kills']} / {blue_pos_data['deaths']} / {blue_pos_data['assists']}"
-            draw.text((left_side['kda'], current_y + 20),
-                      blue_kda,
-                      font=font, fill='white')
+            blue_score = mvp_score[mvp_score['playername'] == blue_pos_data['playername']]['mvp_score'].iloc[0]
+            draw.text((left_side['kda'], current_y + 20), blue_kda, font=font, fill='white')
+            draw.text((left_side['player'], current_y + 5), str(blue_pos_data['playername']), font=font, fill='white')
+            draw.text((left_side['player']+10, current_y + 40), f"{blue_score:.1f}", font=font, fill='#FFD700')
 
             blue_damage = "{:,}".format(blue_pos_data['damagetochampions'])
-            draw.text((left_side['damage'], current_y + 20),
-                      blue_damage,
-                      font=font, fill='white')
+            draw.text((left_side['damage'], current_y + 20), blue_damage, font=font, fill='white')
 
             red_pos_data = red_team[red_team['position'] == position].iloc[0]
             red_champion_icon = Image.open(self.champion_icon_dir / f"{red_pos_data['name_us']}.png")
@@ -488,16 +602,16 @@ class PickRate:
                       red_kda,
                       font=font, fill='white')
 
-            draw.text((right_side['player'], current_y + 20),
-                      str(red_pos_data['playername']),
-                      font=font, fill='white')
+            red_score = mvp_score[mvp_score['playername'] == red_pos_data['playername']]['mvp_score'].iloc[0]
+            draw.text((right_side['player'], current_y + 5), str(red_pos_data['playername']), font=font, fill='white')
+            draw.text((right_side['player']+10, current_y + 40), f"{red_score:.1f}", font=font, fill='#FFD700')
 
     def convert_to_grayscale(self, image):
         return image.convert('L').convert('RGBA')
 
     def add_title_text(self, image, text, x=50, y=50):
         draw = ImageDraw.Draw(image)
-        font = ImageFont.truetype(self.font_path, self.title_font_size)
+        font = ImageFont.truetype(self.title_font_path, self.title_font_size)
         shadow_color = '#2B2B2B'
         shadow_offset = 8
         for i in range(2):
@@ -514,7 +628,7 @@ class PickRate:
 
     def add_first_page_title(self, image, text, x, y, box_width=948, box_height=220):
         draw = ImageDraw.Draw(image)
-        font = ImageFont.truetype(self.font_path, self.title_font_size)
+        font = ImageFont.truetype(self.title_font_path, self.title_font_size)
         pattern = r'\^(.*?)\^'
         parts = regex.split(pattern, text)
         words = []
@@ -551,7 +665,7 @@ class PickRate:
 
         current_x = x
         current_y = y
-        line_height = 15
+        line_height = 50
         current_line = []
         lines = []
 
@@ -689,7 +803,6 @@ class PickRate:
             raise ValueError("가로 또는 세로 길이를 지정해야 합니다.")
         return resized_image
 
-
     def resize_image_type1(self, image):
         w, h = image.size
         target_size = (1080, 1350)
@@ -714,54 +827,6 @@ class PickRate:
             resized_cropped_image = resized_image.crop((0, start_y + 100, new_width, start_y + target_height + 100))
         return resized_cropped_image
 
-    # def apply_alpha_gradient_type1(self, image):
-    #     image = image.convert("RGB")
-    #
-    #     w, h = image.size
-    #
-    #     first_start_height = 700
-    #     first_end_height = 800
-    #     second_start_height = 800
-    #     second_end_height = 1150
-    #     third_start_height = 1150
-    #     third_end_height = 1250
-    #     fourth_start_height = 1250
-    #     fourth_end_height = 1350
-    #
-    #     first_gradient_height = first_end_height - first_start_height
-    #     second_gradient_height = second_end_height - second_start_height
-    #     third_gradient_height = third_end_height - third_start_height
-    #     fourth_gradient_height = fourth_end_height - fourth_start_height
-    #
-    #     def create_alpha_array(start, end, height, width):
-    #         alpha = np.linspace(start, end, height).reshape(-1, 1)
-    #         alpha = np.repeat(alpha, width, axis=1)
-    #         return alpha
-    #
-    #     alpha1 = create_alpha_array(1, 0.3, first_gradient_height, w)
-    #     alpha2 = create_alpha_array(0.3, 0.2, second_gradient_height, w)
-    #     alpha3 = create_alpha_array(0.2, 0.1, third_gradient_height, w)
-    #     alpha4 = create_alpha_array(0.1, 0, fourth_gradient_height, w)
-    #
-    #     black_background = Image.new("RGB", (w, h), (0, 0, 0))
-    #
-    #     result_image = image.copy()
-    #
-    #     def blend_image_section(image, alpha, start_height, end_height):
-    #         section = image.crop((0, start_height, w, end_height))
-    #         black_section = black_background.crop((0, start_height, w, end_height))
-    #         alpha_img = Image.fromarray((alpha * 255).astype(np.uint8), mode='L')
-    #         blended_section = Image.composite(section, black_section, alpha_img)
-    #         image.paste(blended_section, (0, start_height))
-    #
-    #     blend_image_section(result_image, alpha1, first_start_height, first_end_height)
-    #     blend_image_section(result_image, alpha2, second_start_height, second_end_height)
-    #     blend_image_section(result_image, alpha3, third_start_height, third_end_height)
-    #     blend_image_section(result_image, alpha4, fourth_start_height, fourth_end_height)
-    #
-    #     self.add_icon_to_image(result_image, self.logo_path,(500,1270))
-    #     return result_image
-
     def resize_image_type2(self, image):
         """
             가로로 긴 사진 생성 사진이 새로 형식 사진이라면 이미지 비율이 너무 안맞아서 불가능 그냥 return 하기
@@ -783,6 +848,8 @@ class PickRate:
         else:
             raise CommonError(ErrorCode.size, "세로가 긴사진은 type2 불가", image.size)
         return resized_cropped_image
+
+
 
     def convert_png(self):
         image_extensions = ['.jpg', '.jpeg', '.JPG', '.JPEG']
@@ -856,6 +923,7 @@ class PickRate:
             # 데이터 텍스트
             draw.text((130, y + 25), champ, fill='#e2e8f0', font=normal_font)
 
+
             # 승률 색상 조정 (높으면 초록, 낮으면 빨강)
             winrate_color = '#22c55e' if float(winrate[:-1]) > 50 else '#ef4444'
             draw.text((300, y + 25), winrate, fill=winrate_color, font=normal_font)
@@ -868,3 +936,9 @@ class PickRate:
         image.save(self.output_dir / "9.png")
         return image
 
+    def run_all_page(self, match_id, player_name):
+        self.first_page(match_id, player_name)
+        self.second_page(match_id, player_name)
+        self.third_page(match_id, player_name)
+        self.fourth_page(match_id, player_name)
+        self.fifth_page(match_id, player_name)
