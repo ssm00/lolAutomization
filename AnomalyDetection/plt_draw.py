@@ -11,7 +11,7 @@ class PltDraw:
 
     def __init__(self, database, meta_data):
         self.database = database
-        self.patch = meta_data.anomaly_info.get("patch")
+        self.patch = meta_data.basic_info.get("patch")
         self.plt_out_dir = Path(__file__).parent.parent / "PltOutput"
 
     def draw_pick_rates_white_bg(self, name_us, position):
@@ -430,7 +430,6 @@ class PltDraw:
         plt.close()
 
     def draw_all_series(self, game_id, player_name):
-        # 각 통계 항목별 설정
         metrics_config = {
             "goldat": {
                 "title": "시간대별 골드 획득",
@@ -476,7 +475,6 @@ class PltDraw:
             }
         }
 
-        # 기본 스타일 설정
         plt.style.use('seaborn-v0_8-dark')
         plt.rcParams['font.family'] = 'NanumGothic'
         plt.rcParams['axes.unicode_minus'] = False
@@ -485,7 +483,6 @@ class PltDraw:
         plt.rcParams['xtick.color'] = 'white'
         plt.rcParams['ytick.color'] = 'white'
 
-        # 데이터 준비
         series_info = self.database.get_match_series_info(game_id, player_name)
         champion_name = self.database.get_name_kr(series_info["name_us"][0])
         opp_champion_name = self.database.get_oppnent_player_name(game_id, player_name).get("name_us")
@@ -819,262 +816,20 @@ class PltDraw:
         )
         plt.close()
 
-    # def get_position_weights(self, position):
-    #     """
-    #     Get scoring weights based on player position
-    #     """
-    #     weights = {
-    #         'top': {
-    #             'kda': 0.25,
-    #             'economy': 0.30,
-    #             'vision': 0.15,
-    #             'objective': 0.15,
-    #             'damage': {
-    #                 'dealt': 0.08,
-    #                 'taken': 0.07
-    #             }
-    #         },
-    #         'jng': {  # 데이터베이스의 position 컬럼에 맞춤
-    #             'kda': 0.20,
-    #             'economy': 0.15,
-    #             'vision': 0.20,
-    #             'objective': 0.35,
-    #             'damage': {
-    #                 'dealt': 0.05,
-    #                 'taken': 0.05
-    #             }
-    #         },
-    #         'mid': {
-    #             'kda': 0.25,
-    #             'economy': 0.25,
-    #             'vision': 0.15,
-    #             'objective': 0.15,
-    #             'damage': {
-    #                 'dealt': 0.15,
-    #                 'taken': 0.05
-    #             }
-    #         },
-    #         'bot': {  # ADC position
-    #             'kda': 0.30,
-    #             'economy': 0.25,
-    #             'vision': 0.10,
-    #             'objective': 0.15,
-    #             'damage': {
-    #                 'dealt': 0.15,
-    #                 'taken': 0.05
-    #             }
-    #         },
-    #         'sup': {  # Support position
-    #             'kda': 0.20,
-    #             'economy': 0.10,
-    #             'vision': 0.35,
-    #             'objective': 0.20,
-    #             'damage': {
-    #                 'dealt': 0.05,
-    #                 'taken': 0.10
-    #             }
-    #         }
-    #     }
-    #     return weights.get(position.lower(), weights['mid'])
-    #
-    # def calculate_mvp_score(self, game_df):
-    #     """
-    #     Calculate MVP score for each player considering their positions
-    #     """
-    #
-    #     def calculate_player_score(row):
-    #         weights = self.get_position_weights(row['position'])
-    #
-    #         # 1. KDA Score
-    #         if row['deaths'] == 0:
-    #             kda = (row['kills'] + row['assists']) * 2
-    #         else:
-    #             kda = (row['kills'] + row['assists']) / row['deaths']
-    #
-    #         kill_participation = (row['kills'] + row['assists']) / row['teamkills'] if row['teamkills'] > 0 else 0
-    #         first_blood_bonus = 2 if (row['firstbloodkill'] or row['firstbloodassist']) else 0
-    #
-    #         kda_score = (
-    #                             (kda * 0.4) +
-    #                             (kill_participation * 0.4) +
-    #                             (first_blood_bonus * 0.2)
-    #                     ) * weights['kda'] * 100
-    #
-    #         # 2. Economy Score
-    #         gold_efficiency = row['goldspent'] / row['earnedgold'] if row['earnedgold'] > 0 else 0
-    #         economy_score = (
-    #                                 (row['cspm'] / 10 * 0.3) +
-    #                                 (row['damageshare'] * 0.4) +
-    #                                 (row['earnedgoldshare'] * 0.3)
-    #                         ) * weights['economy'] * 100
-    #
-    #         # 3. Vision Score
-    #         vision_score = (
-    #                                (row['vspm'] * 0.4) +
-    #                                (row['wcpm'] * 0.3) +
-    #                                (row['wpm'] * 0.3)
-    #                        ) * weights['vision'] * 100
-    #
-    #         # 4. Objective Score
-    #         first_objectives = sum([
-    #             row['firsttower'], row['firstdragon'],
-    #             row['firstherald'], row['firstbaron']
-    #         ])
-    #
-    #         objective_score = ((first_objectives / 4 * 0.5) +
-    #                                   (row['towers'] / (row['towers'] + row['opp_towers']) * 0.25 if (row['towers'] +
-    #                                                                                                   row[
-    #                                                                                                       'opp_towers']) > 0 else 0) +
-    #                                   (row['dragons'] / (row['dragons'] + row['opp_dragons']) * 0.25 if (row[
-    #                                                                                                          'dragons'] +
-    #                                                                                                      row[
-    #                                                                                                          'opp_dragons']) > 0 else 0)
-    #                           ) * weights['objective'] * 100
-    #
-    #         # 5. Damage Score
-    #         damage_score = (
-    #                                (row['damageshare'] * weights['damage']['dealt']) +
-    #                                ((row['damagetakenperminute'] / (row['dpm'] if row['dpm'] > 0 else 1)) *
-    #                                 weights['damage']['taken'])
-    #                        ) * 100
-    #
-    #         # Position-specific bonuses
-    #         position = row['position'].lower()
-    #         if position == 'jng':
-    #             objective_score *= 1.2
-    #             if row['monsterkillsenemyjungle'] > 5:
-    #                 objective_score *= 1.1
-    #
-    #         elif position == 'sup':
-    #             vision_score *= 1.2
-    #             if row['assists'] > row['kills'] * 2:
-    #                 kda_score *= 1.1
-    #
-    #         elif position == 'mid':
-    #             if kill_participation > 0.6:
-    #                 kda_score *= 1.15
-    #
-    #         elif position == 'bot':
-    #             if row['deaths'] < 3:
-    #                 kda_score *= 1.2
-    #
-    #         elif position == 'top':
-    #             if row['firsttower']:
-    #                 objective_score *= 1.2
-    #
-    #         # Victory bonus
-    #         if row['result']:
-    #             total_score_base = kda_score + economy_score + vision_score + objective_score + damage_score
-    #             victory_bonus = total_score_base * 0.1  # 승리 시 10% 보너스
-    #         else:
-    #             victory_bonus = 0
-    #
-    #         total_score = kda_score + economy_score + vision_score + objective_score + damage_score + victory_bonus
-    #
-    #         return {
-    #             'total_score': total_score,
-    #             'breakdown': {
-    #                 'KDA': kda_score,
-    #                 'Economy': economy_score,
-    #                 'Vision': vision_score,
-    #                 'Objective': objective_score,
-    #                 'Damage': damage_score,
-    #                 'Victory Bonus': victory_bonus
-    #             }
-    #         }
-    #
-    #     # Calculate scores for all players
-    #     scores = game_df.apply(calculate_player_score, axis=1)
-    #
-    #     # Create result DataFrame
-    #     result_df = game_df[['playername', 'champion', 'position']].copy()
-    #     result_df['mvp_score'] = scores.apply(lambda x: x['total_score'])
-    #     result_df['score_breakdown'] = scores.apply(lambda x: x['breakdown'])
-    #     print(result_df)
-    #     return result_df.sort_values('mvp_score', ascending=False)
-    #
-
-    def draw_radar_chart(self, game_df, player_name):
+    def draw_radar_chart(self, game_id, player_name):
+        radar_data = self.database.get_radar_stats(game_id, player_name)
         matplotlib.use('Agg')
         plt.style.use('seaborn-v0_8-dark')
         plt.rc('font', family='Malgun Gothic')
-        player_df = game_df[game_df["playername"] == player_name].iloc[0]
-        game_id = player_df['gameid']
-        opp_player_df = game_df[(game_df["position"] == player_df['position']) & (game_df['side'] != player_df['side'])].iloc[0]
-        player_name_kr = self.database.get_name_kr(player_df['name_us'])
-        opp_player_name_kr = self.database.get_name_kr(opp_player_df['name_us'])
 
-        base_stats = ['kills', 'deaths', 'assists', 'damagetochampions', 'damagetakenperminute']
-        label_mapping = {
-            'kills': '킬',
-            'deaths': '데스',
-            'assists': '어시스트',
-            'damagetochampions': '가한 피해량',
-            'damagetakenperminute': '분당 받은 피해량',
-            'totalgold': 'CS',
-            'laning_score': '라인전 점수',
-            'visionscore': '비전 스코어',
-            'dragons': '드래곤',
-            'barons': '바론'
-        }
-
-        position = player_df['position']
-        if position in ['mid', 'top', 'bottom']:
-            player_laning = ((player_df['normalized_golddiffat15'] * 0.4) +
-                             (player_df['normalized_xpdiffat15'] * 0.3) +
-                             (player_df['normalized_csdiffat15'] * 0.3))
-            opp_laning = ((opp_player_df['normalized_golddiffat15'] * 0.4) +
-                          (opp_player_df['normalized_xpdiffat15'] * 0.3) +
-                          (opp_player_df['normalized_csdiffat15'] * 0.3))
-
-            stats = base_stats + ['totalgold', 'laning_score']
-            stats_values = {
-                'player': [player_df[stat] for stat in base_stats] + [player_df['totalgold'], player_laning],
-                'opponent': [opp_player_df[stat] for stat in base_stats] + [opp_player_df['totalgold'], opp_laning]
-            }
-
-        elif position == 'jungle':
-            player_team = game_df[(game_df['position'] == "team") & (game_df['side'] == player_df['side'])].iloc[0]
-            opp_team = game_df[(game_df['position'] == "team") & (game_df['side'] == opp_player_df['side'])].iloc[0]
-
-            stats = base_stats + ['dragons', 'barons']
-            stats_values = {
-                'player': [player_df[stat] for stat in base_stats] + [player_team['dragons'], player_team['barons']],
-                'opponent': [opp_player_df[stat] for stat in base_stats] + [opp_team['dragons'], opp_team['barons']]
-            }
-
-        else:  # support
-            player_laning = ((player_df['normalized_golddiffat15'] * 0.4) +
-                             (player_df['normalized_xpdiffat15'] * 0.3) +
-                             (player_df['normalized_csdiffat15'] * 0.3))
-            opp_laning = ((opp_player_df['normalized_golddiffat15'] * 0.4) +
-                          (opp_player_df['normalized_xpdiffat15'] * 0.3) +
-                          (opp_player_df['normalized_csdiffat15'] * 0.3))
-
-            stats = base_stats + ['visionscore', 'laning_score']
-            stats_values = {
-                'player': [player_df[stat] for stat in base_stats] + [player_df['visionscore'], player_laning],
-                'opponent': [opp_player_df[stat] for stat in base_stats] + [opp_player_df['visionscore'], opp_laning]
-            }
-
-        max_values = [max(stats_values['player'][i], stats_values['opponent'][i]) for i in range(len(stats))]
-        normalized_values = {
-            'player': [val / max_val * 0.7 if max_val != 0 else 0 for val, max_val in
-                       zip(stats_values['player'], max_values)],
-            'opponent': [val / max_val * 0.7 if max_val != 0 else 0 for val, max_val in
-                         zip(stats_values['opponent'], max_values)]
-        }
-
-        num_vars = len(stats)
+        num_vars = len(radar_data['stats'])
         angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
         angles += angles[:1]
 
-        values_player = normalized_values['player']
-        values_player = values_player + [values_player[0]]
-        values_opponent = normalized_values['opponent']
-        values_opponent = values_opponent + [values_opponent[0]]
-        original_values_player = stats_values['player']
-        original_values_opponent = stats_values['opponent']
+        values_player = radar_data['normalized_values']['player'] + [radar_data['normalized_values']['player'][0]]
+        values_opponent = radar_data['normalized_values']['opponent'] + [radar_data['normalized_values']['opponent'][0]]
+        original_values_player = radar_data['stats_values']['player']
+        original_values_opponent = radar_data['stats_values']['opponent']
 
         fig = plt.figure(figsize=(10, 10), facecolor='none')
         ax = fig.add_subplot(111, polar=True)
@@ -1091,76 +846,62 @@ class PltDraw:
             xs, ys = zip(*polygon_points)
             plt.plot(angles, [r] * len(angles), '--', color='white', alpha=1)
 
-        # 데이터 플롯
         ax.fill(angles, values_player, alpha=0.25, color='#3498db')
-        ax.plot(angles, values_player, 'o-', linewidth=2, label=f"{player_df['playername']}({player_name_kr})",
-                color='#3498db')
+        ax.plot(angles, values_player, 'o-', linewidth=2,
+                label=radar_data['player_names']['player'], color='#3498db')
 
         ax.fill(angles, values_opponent, alpha=0.25, color='#e74c3c')
         ax.plot(angles, values_opponent, 'o-', linewidth=2,
-                label=f"{opp_player_df['playername']}({opp_player_name_kr})", color='#e74c3c')
-
-        # 라벨 설정 부분 수정
+                label=radar_data['player_names']['opponent'], color='#e74c3c')
         ax.set_xticks(angles[:-1])
-        labels = [label_mapping[stat] for stat in stats]
+        labels = [radar_data['label_mapping'][stat] for stat in radar_data['stats']]
         ax.set_xticklabels(labels, color='white', fontsize=20)
 
         for i in range(len(angles) - 1):
             angle = angles[i]
-
             player_val = original_values_player[i]
             opp_val = original_values_opponent[i]
-
-            # 값 포맷팅
-            if stats[i] in ['kills', 'deaths', 'assists', 'dragons', 'barons']:
+            if radar_data['stats'][i] in ['kills', 'deaths', 'assists', 'dragons', 'barons']:
                 p_text = f"{int(player_val)}"
                 o_text = f"{int(opp_val)}"
-            elif stats[i] in ['damagetochampions']:
+            elif radar_data['stats'][i] in ['damagetochampions']:
                 p_text = f"{int(player_val / 1000)}k"
                 o_text = f"{int(opp_val / 1000)}k"
-            elif stats[i] in ['damagetakenperminute']:
+            elif radar_data['stats'][i] in ['damagetakenperminute']:
                 p_text = f"{int(player_val)}"
                 o_text = f"{int(opp_val)}"
-            elif stats[i] == 'laning_score':
+            elif radar_data['stats'][i] == 'laning_score':
                 p_text = f"{player_val:.2f}"
                 o_text = f"{opp_val:.2f}"
             else:
                 p_text = f"{int(player_val)}"
                 o_text = f"{int(opp_val)}"
 
-            # 오프셋 계산을 위한 값
+            # 값 위치 조정 및 표시
             vertical_offset = 0.1
             horizontal_offset = 0.05
 
-            # 플레이어 값
             ax.text(angle, values_player[i] + vertical_offset, p_text,
-                    color='#3498db',
-                    ha='center',
-                    va='bottom',
-                    fontsize=20,
-                    fontweight='bold')
+                    color='#3498db', ha='center', va='bottom',
+                    fontsize=20, fontweight='bold')
 
             r = values_opponent[i] + vertical_offset
             x = r * np.cos(angle) + horizontal_offset * np.sin(angle)
             y = r * np.sin(angle) - horizontal_offset * np.cos(angle)
-
             new_angle = np.arctan2(y, x)
             new_r = np.sqrt(x ** 2 + y ** 2)
 
             ax.text(new_angle, new_r, o_text,
-                    color='#e74c3c',
-                    ha='center',
-                    va='bottom',
-                    fontsize=20,
-                    fontweight='bold')
+                    color='#e74c3c', ha='center', va='bottom',
+                    fontsize=20, fontweight='bold')
 
         plt.legend(loc='upper right', bbox_to_anchor=(0.1, 0.1), fontsize=20, labelcolor='white')
-
         plt.tight_layout()
         today_date = datetime.today().date().strftime("%y_%m_%d")
         save_dir = self.plt_out_dir / "PickRate" / "Basic" / today_date
         save_dir.mkdir(exist_ok=True, parents=True)
-        save_path = save_dir / f'radar_{game_id}_{position}_{self.patch}.png'
+        save_path = save_dir / f'radar_{radar_data["game_id"]}_{radar_data["position"]}_{self.patch}.png'
+
         plt.savefig(
             save_path,
             bbox_inches='tight',
