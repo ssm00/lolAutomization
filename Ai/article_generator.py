@@ -14,6 +14,7 @@ class ArticleGenerator:
         self.database = database
         self.meta_data = meta_data
         self.prmpt = meta_data.prompt.get("pick_rate")
+        self.type = meta_data.prompt.get("pick_rate").get("type")
         tracer = LangChainTracer(
             project_name=os.getenv('LANGCHAIN_PROJECT', 'default-project')
         )
@@ -32,7 +33,7 @@ class ArticleGenerator:
         self.first_page_template = PromptTemplate(
             input_variables=["player_name", "champion_name", "position", "team_name", "pick_rate", "kda", "max_chars"],
             partial_variables={"format_instructions": self.parsers['first_page'].get_format_instructions()},
-            template=self.prmpt.get("v1").get("page1")
+            template=self.prmpt.get("long").get("page1")
         )
 
         self.second_page_template = PromptTemplate(
@@ -41,7 +42,7 @@ class ArticleGenerator:
                     "patch_version", "pick_rate", "player_team", "mvp_champion",
                     "mvp_player", "mvp_score", "max_chars"],
             partial_variables={"format_instructions": self.parsers['second_page'].get_format_instructions()},
-            template=self.prmpt.get("v1").get("page2")
+            template=self.prmpt.get("long").get("page2")
         )
 
         self.third_page_template = PromptTemplate(
@@ -51,13 +52,13 @@ class ArticleGenerator:
                 "time_frames", "max_chars", "stats", "player_stats_values", "opponent_stats_values", "label_mapping"
             ],
             partial_variables={"format_instructions": self.parsers['third_page'].get_format_instructions()},
-            template=self.prmpt.get("v1").get("page3")
+            template=self.prmpt.get("long").get("page3")
         )
 
         self.fourth_page_template = PromptTemplate(
             input_variables=["champion_kr_name", "position", "tier", "pick_rate", "ban_rate", "win_rate", "ranking", "max_chars", "patch", "opponent_champion"],
             partial_variables={"format_instructions": self.parsers['fourth_page'].get_format_instructions()},
-            template=self.prmpt.get("v1").get("page4")
+            template=self.prmpt.get("long").get("page4")
         )
 
         self.fifth_page_template = PromptTemplate(
@@ -65,7 +66,7 @@ class ArticleGenerator:
                 "player_name", "player_champion_kr", "position", "counters", "max_chars"
             ],
             partial_variables={"format_instructions": self.parsers['fifth_page'].get_format_instructions()},
-            template=self.prmpt.get("v1").get("page5")
+            template=self.prmpt.get("long").get("page5")
         )
         self.chains = {
             'first_page': self.first_page_template | self.llm | self.parsers['first_page'],
@@ -96,48 +97,76 @@ class ArticleGenerator:
         return result['title']
 
     def generate_second_page_article(self, game_df, player_name, max_chars):
-        player_data = game_df[game_df['playername'] == player_name].iloc[0]
-        blue_team = game_df[game_df['side'] == 'Blue']
-        red_team = game_df[game_df['side'] == 'Red']
-        opp_player_data = game_df[
-            (game_df['position'] == player_data['position']) &
-            (game_df['side'] != player_data['side'])
-            ].iloc[0]
-        mvp_player_info = self.database.get_mvp_player(game_df)
+        if self.type == "long":
+            player_data = game_df[game_df['playername'] == player_name].iloc[0]
+            blue_team = game_df[game_df['side'] == 'Blue']
+            red_team = game_df[game_df['side'] == 'Red']
+            opp_player_data = game_df[
+                (game_df['position'] == player_data['position']) &
+                (game_df['side'] != player_data['side'])
+                ].iloc[0]
+            mvp_player_info = self.database.get_mvp_player(game_df)
 
-        champion_stats = self.database.get_champion_pick_rate_info(
-            player_data['name_us'],
-            game_df['patch'].iloc[0],
-            player_data['position']
-        )
+            champion_stats = self.database.get_champion_pick_rate_info(
+                player_data['name_us'],
+                game_df['patch'].iloc[0],
+                player_data['position']
+            )
 
-        template_variables = {
-            'game_date': game_df['game_date'].iloc[0].strftime('%Y년%m월%d일'),
-            'league': game_df['league'].iloc[0],
-            'set': game_df['game'].iloc[0],
-            'blue_team_name': blue_team['teamname'].iloc[0],
-            'red_team_name': red_team['teamname'].iloc[0],
-            'player_name': player_data['playername'],
-            'champion_name': self.database.get_name_kr(player_data['name_us']),
-            'opp_player': opp_player_data['playername'],
-            'opp_champion': self.database.get_name_kr(opp_player_data['name_us']),
-            'patch_version': game_df['patch'].iloc[0],
-            'pick_rate': champion_stats['pick_rate'],
-            'player_team': player_data['teamname'],
-            'mvp_champion': mvp_player_info['name_kr'],
-            'mvp_player': mvp_player_info['playername'],
-            'mvp_score': mvp_player_info['mvp_score'],
-            'max_chars': max_chars
-        }
+            template_variables = {
+                'game_date': game_df['game_date'].iloc[0].strftime('%Y년%m월%d일'),
+                'league': game_df['league'].iloc[0],
+                'set': game_df['game'].iloc[0],
+                'blue_team_name': blue_team['teamname'].iloc[0],
+                'red_team_name': red_team['teamname'].iloc[0],
+                'player_name': player_data['playername'],
+                'champion_name': self.database.get_name_kr(player_data['name_us']),
+                'opp_player': opp_player_data['playername'],
+                'opp_champion': self.database.get_name_kr(opp_player_data['name_us']),
+                'patch_version': game_df['patch'].iloc[0],
+                'pick_rate': champion_stats['pick_rate'],
+                'player_team': player_data['teamname'],
+                'mvp_champion': mvp_player_info['name_kr'],
+                'mvp_player': mvp_player_info['playername'],
+                'mvp_score': mvp_player_info['mvp_score'],
+                'max_chars': max_chars
+            }
 
-        result = self.chains['second_page'].invoke(template_variables)
-        print(max_chars)
-        print(result)
-        print(len(result['text']))
-        return result['text']
+            result = self.chains['second_page'].invoke(template_variables)
+            return result['text']
+        elif self.type == "short":
+            template = self.prmpt.get("short").get("page2")
+            mvp_player_info = self.database.get_mvp_player(game_df)
+            player_data = game_df[game_df['playername'] == player_name].iloc[0]
 
+            win_team = game_df[(game_df['result'] == 1) & (game_df['position'] == 'team')].iloc[0]
+            lose_team = game_df[(game_df['result'] == 0) & (game_df['position'] == 'team')].iloc[0]
+            win_team_total_score, lose_team_total_score = self.database.get_sets_score(player_data['gameid'], win_team, lose_team)
+            if win_team_total_score >= lose_team_total_score:
+                set_score = f"{win_team_total_score}-{lose_team_total_score}"
+                score_leader = win_team['teamname']
+            else:
+                set_score = f"{lose_team_total_score}-{win_team_total_score}"
+                score_leader = lose_team['teamname']
+            line_kr = {'top':'탑','jungle':'정글','mid':'미드','bottom':'원딜','support':'서폿'}
+            line = line_kr[player_data['position']]
 
-
+            champion_stats = self.database.get_champion_pick_rate_info(player_data['name_us'], game_df['patch'].iloc[0], player_data['position'])
+            template = template.format(
+                win_team_name=win_team['teamname'],
+                lose_team_name=lose_team['teamname'],
+                set=game_df['game'].iloc[0],
+                set_score=set_score,
+                score_leader=score_leader,
+                player_name=player_data['playername'],
+                line=line,
+                pick_rate=champion_stats['pick_rate'],
+                champion_name=self.database.get_name_kr(player_data['name_us']),
+                mvp_player=mvp_player_info['playername'],
+                mvp_champion=mvp_player_info['name_kr'],
+                mvp_score=mvp_player_info['mvp_score']
+            )
+            return template
 
     def generate_third_page_article(self, game_df, player_name, max_chars):
         try:
