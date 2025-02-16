@@ -81,7 +81,7 @@ class ChampionDetection:
 
     def run_pick_rate(self):
         """
-        픽률이 하위 10프로인 챔피언을 픽한 경우
+        픽률이 하위 10프로인 챔피언을 픽한 경우 -> 이긴경우
         """
         position_champions = self.database.get_all_position_pick_rate(self.patch)
         match_info = self.database.get_player_info(self.patch)
@@ -89,9 +89,10 @@ class ChampionDetection:
         for index, row in match_info.iterrows():
             position = row['position'].lower()
             name_us = row['name_us']
+            result = row['result']
             champion = position_champions[position]['name_us_list'].get(name_us, None)
-            #오프 포지션임
-            if champion is None:
+            # 라인에 맞지 않는 챔피언, 패배한 경우
+            if champion is None or result == 0:
                 continue
             name_kr = champion.get("name_kr")
             pick_rate = champion.get("pick_rate")
@@ -109,7 +110,6 @@ class ChampionDetection:
                 'pick_rate': pick_rate,
                 'issue_type': []
             }
-            # 2. 픽률이 하위 10% 이하인 경우
             if name_us in position_champions[position]['low_pickrate_champions']:
                 pick_info['issue_type'].append(f'낮은 픽률 {pick_rate}')
 
