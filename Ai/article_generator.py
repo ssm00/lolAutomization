@@ -1,4 +1,3 @@
-
 from langchain_core.tracers import LangChainTracer
 from dotenv import load_dotenv
 import os
@@ -68,6 +67,11 @@ class ArticleGenerator:
             partial_variables={"format_instructions": self.parsers['fifth_page'].get_format_instructions()},
             template=self.prmpt.get("long").get("page5")
         )
+
+        # self.match_result_template = PromptTemplate(
+        #
+        # )
+
         self.chains = {
             'first_page': self.first_page_template | self.llm | self.parsers['first_page'],
             'second_page': self.second_page_template | self.llm | self.parsers['second_page'],
@@ -375,17 +379,24 @@ class ArticleGenerator:
                     exp_wins += 1
 
             win_rate = (gold_wins + exp_wins) / total_comparisons
-
-            if win_rate > 0.6:
-                return f"{champion} 압도"
-            elif win_rate > 0.5:
-                return f"{champion} 승"
-            elif win_rate < 0.4:
-                return f"{opponent} 압도"
-            elif win_rate < 0.5:
-                return f"{opponent} 승"
+            if len(phase_times) == 1:
+                if win_rate == 1.0:
+                    return f"{champion} 압도"
+                elif win_rate == 0.5:
+                    return "접전"
+                else:
+                    return f"{opponent} 압도"
             else:
-                return "동률"
+                if win_rate >= 0.75:
+                    return f"{champion} 압도"
+                elif win_rate == 0.5:
+                    return "접전"
+                elif win_rate <= 0.25:
+                    return f"{opponent} 압도"
+                elif win_rate > 0.5:
+                    return f"{champion} 승"
+                else:
+                    return f"{opponent} 승"
 
         phases_kr = {
             'early': '초반 (0~10분)',
