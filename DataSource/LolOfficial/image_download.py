@@ -1,3 +1,5 @@
+import json
+from urllib.parse import urlparse
 
 import requests as re
 import re as regex
@@ -5,6 +7,7 @@ from pathlib import Path
 from PIL import Image
 import io
 from bs4 import BeautifulSoup
+import os
 import onnxruntime as ort
 
 class ImageDownload:
@@ -154,3 +157,77 @@ class ImageDownload:
             processed_champions.add(champion)
             results[champion] = url
         return results
+
+    def get_all_groups(self):
+        url = "https://esports-api.lolesports.com/persisted/gw/getStandings?hl=ko-KR&tournamentId=113480665704729522"
+        url = ""
+        pass
+
+    def download_team_icons(self, url):
+        response = re.get(url, headers=self.lol_eSport_header)
+        data = response.json()
+        output_dir = Path(__file__).parent.parent.parent / "Assets" / "Image" / "team_icon"
+        teams = {}
+        stages = data['data']['standings'][0]['stages']
+        for stage in stages:
+            for section in stage['sections']:
+                if 'rankings' in section and section['rankings']:
+                    for ranking in section['rankings']:
+                        for team in ranking['teams']:
+                            team_id = team['id']
+                            if team_id not in teams:
+                                teams[team_id] = {
+                                    'name': team['name'],
+                                    'code': team['code'],
+                                    'image': team['image']
+                                }
+                if 'matches' in section:
+                    for match in section['matches']:
+                        for team in match['teams']:
+                            team_id = team['id']
+                            if team_id not in teams:
+                                teams[team_id] = {
+                                    'name': team['name'],
+                                    'code': team['code'],
+                                    'image': team['image']
+                                }
+
+        print(f"총 {len(teams)}개 팀 아이콘을 다운로드합니다.")
+
+        downloaded_count = 0
+        for team_id, team_info in teams.items():
+            team_name = team_info['name']
+            team_code = team_info['code']
+            image_url = team_info['image']
+            team_slug = team_info['slug']
+
+            file_name = f"{team_name}.png"
+            file_path = os.path.join(output_dir, file_name)
+
+            try:
+                if image_url.startswith('//'):
+                    image_url = 'http:' + image_url
+
+                response = re.get(image_url)
+                response.raise_for_status()
+
+                with open(file_path, 'wb') as img_file:
+                    img_file.write(response.content)
+
+                print(f"다운로드 완료: {team_name} ({team_code}) -> {file_path}")
+                downloaded_count += 1
+                sql_query = f"""
+                            INSERT INTO esport_team_info (name, team_id, slug, code, image_url) 
+                            VALUES ('{team_name.replace("'", "''")}', '{team_id}', '{team_slug}', '{team_code}', '{image_url}')
+                            ON DUPLICATE KEY UPDATE 
+                                name = '{team_name.replace("'", "''")}',
+                                code = '{team_code}',
+                                slug = '{team_slug}',
+                                image_url = '{image_url}';
+                            """
+                self.database.fetch_one(sql_query)
+                self.database.commit()
+            except Exception as e:
+                print(f"다운로드 실패: {team_name} - {e}")
+
+        print(f"\n총 {downloaded_count}개 팀 아이콘 다운로드 완료.")
