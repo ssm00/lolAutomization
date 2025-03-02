@@ -1,0 +1,17 @@
+{
+    "tier_color": {
+        "1" : "#eb5757",
+        "2" : "#fa7c49",
+        "3" : "#fab619",
+        "4" : "#00b47e",
+        "5" : "#2794cf"
+    },
+    "main_line_spacing": 15,
+    "main_font_size": 50,
+    "title_font_size": 96,
+    "sub_title_font_size": 40,
+    "black": "#000000",
+    "logo_position" : [500, 1270],
+    "match_result_score_font_size": 30,
+    "match_result_player_name_font_size": 50
+}
