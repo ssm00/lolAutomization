@@ -831,7 +831,9 @@ class PltDraw:
         original_values_player = radar_data['stats_values']['player']
         original_values_opponent = radar_data['stats_values']['opponent']
 
-        fig = plt.figure(figsize=(10, 10), facecolor='none')
+        desired_pixel_size = (3000, 2300)
+        inches = (desired_pixel_size[0]/300, desired_pixel_size[1]/300)
+        fig = plt.figure(figsize=inches, facecolor='none')
         ax = fig.add_subplot(111, polar=True)
 
         ax.grid(False)
@@ -902,11 +904,14 @@ class PltDraw:
         save_dir.mkdir(exist_ok=True, parents=True)
         save_path = save_dir / f'radar_{radar_data["game_id"]}_{radar_data["position"]}_{self.patch}.png'
 
+        plt.gcf().set_size_inches(inches)
+
         plt.savefig(
             save_path,
-            bbox_inches='tight',
+            bbox_inches=None,
             dpi=300,
-            transparent=True
+            transparent=True,
+            pad_inches=0
         )
         plt.close()
         return save_path
