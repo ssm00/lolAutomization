@@ -5,7 +5,7 @@ class MetaData:
 
     def __init__(self):
         self.db_info = None
-        self.anomaly_info = None
+        self.basic_info = None
         self.prompt = None
         self.key = None
         self.image_modifier_info = None
@@ -19,7 +19,7 @@ class MetaData:
 
     def load_all_json(self):
         self.db_info = self.load_json('db_info.json')
-        self.anomaly_info = self.load_json('anomaly_detection_info.json')
+        self.basic_info = self.load_json('basic_info.json')
         self.prompt = self.load_json('prompt.json')
         self.key = self.load_json('key.json')
         self.image_modifier_info = self.load_json('image_modifier_info.json')
