@@ -5,7 +5,8 @@ from Db import mongo_db
 from MyMetaData import metadata
 from text_refiner import TextRefiner
 
-def transcribe_video(video_path, model_size="large", language="ko"):
+
+def transcribe_video(video_path, model_size="medium", language="ko"):
     try:
         print(f"GPU 사용 가능 여부: {torch.cuda.is_available()}")
 
@@ -17,7 +18,6 @@ def transcribe_video(video_path, model_size="large", language="ko"):
         print(f"모델 로딩 완료! (소요시간: {time.time() - start_time:.1f}초)")
         print("음성을 텍스트로 변환 중...")
 
-        # 음성을 텍스트로 변환
         start_time = time.time()
         result = model.transcribe(
             video_path,
@@ -75,14 +75,9 @@ if __name__ == "__main__":
     meta = metadata.MetaData()
     mongo_info = meta.db_info['mongo_local']
     database = mongo_db.MongoDB(mongo_info)
-    # # 실행
-    # result = transcribe_video(VIDEO_PATH, MODEL_SIZE, LANGUAGE)
-    # if result:
-    #     save_transcript(result, OUTPUT_PATH)
 
     document = database.find_by_video_path(VIDEO_PATH)
 
-    # 텍스트 개선
     refiner = TextRefiner()
     refined_result = refiner.refine_interview(document)
     print(refined_result)

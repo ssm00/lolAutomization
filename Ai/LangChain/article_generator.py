@@ -5,12 +5,13 @@ from langchain_openai import ChatOpenAI
 from langchain_core.output_parsers.json import JsonOutputParser
 
 from langchain_core.prompts import PromptTemplate
-from Ai.response_form import *
+from Ai.LangChain.response_form import *
 
 class ArticleGenerator:
-    def __init__(self, database, meta_data):
+    def __init__(self, database, mongo, meta_data):
         load_dotenv()
         self.database = database
+        self.mongo = mongo
         self.meta_data = meta_data
         self.prmpt = meta_data.prompt.get("pick_rate")
         self.type = meta_data.prompt.get("pick_rate").get("type")
@@ -27,7 +28,8 @@ class ArticleGenerator:
             'second_page': JsonOutputParser(pydantic_object=SecondPageResponse),
             'third_page': JsonOutputParser(pydantic_object=ThirdPageResponse),
             'fourth_page': JsonOutputParser(pydantic_object=FourthPageResponse),
-            'fifth_page': JsonOutputParser(pydantic_object=FifthPageResponse)
+            'fifth_page': JsonOutputParser(pydantic_object=FifthPageResponse),
+            'interview': JsonOutputParser(pydantic_object=InterviewResponse)
         }
         self.first_page_template = PromptTemplate(
             input_variables=["player_name", "champion_name", "position", "team_name", "pick_rate", "kda", "max_chars"],
@@ -68,16 +70,37 @@ class ArticleGenerator:
             template=self.prmpt.get("long").get("page5")
         )
 
-        # self.match_result_template = PromptTemplate(
-        #
-        # )
+        self.interview_template = PromptTemplate(
+            input_variables=[
+                "full_text"
+            ],
+            partial_variables={"format_instructions": self.parser['interview'].get_format_instructions()},
+            template="""
+                당신은 인터뷰 내용을 분석하고 요약하는 전문가입니다.
+주어진 인터뷰 텍스트를 읽고, 다음 작업을 수행하세요:
+
+ [작성 지침]
+    1. 전체 인터뷰를 대표할 수 있는 메인 타이틀을 생성하세요.
+    2. 인터뷰 내용에서 중요한 3-9개의 섹션을 식별하고 각각에 대해:
+        - 해당 섹션을 표현하는 부제목(subtitle)을 작성하세요.
+        - 해당 섹션의 핵심 내용을 간결하게 요약하세요.
+        - 자연스러운 한국어를 사용
+        - 리그오브레전드 게임임을 고려한 단어 선택
+
+{format_instructions}
+
+인터뷰 텍스트:
+{full_text}
+            """,
+        )
 
         self.chains = {
             'first_page': self.first_page_template | self.llm | self.parsers['first_page'],
             'second_page': self.second_page_template | self.llm | self.parsers['second_page'],
             'third_page': self.third_page_template | self.llm | self.parsers['third_page'],
             'fourth_page': self.fourth_page_template | self.llm | self.parsers['fourth_page'],
-            'fifth_page': self.fifth_page_template | self.llm | self.parsers['fifth_page']
+            'fifth_page': self.fifth_page_template | self.llm | self.parsers['fifth_page'],
+            'interview': self.fifth_page_template | self.llm | self.parsers['interview']
         }
 
     def generate_first_page_article(self, game_df, player_name, max_chars):
@@ -344,6 +367,12 @@ class ArticleGenerator:
                 result_lines.append("\n".join(line))
             result = "\n".join(result_lines)
             return result
+
+    def generate_interview_summary(self, VIDEO_PATH):
+        document = self.mongo.find_by_video_path(VIDEO_PATH)
+        result = self.chains['interview'].invoke({"full_text":document['full_text']})
+        print(result)
+        return result['text']
 
     def calculate_kda(self, kill, death, assist):
         if death == 0:
