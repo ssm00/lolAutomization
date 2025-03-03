@@ -13,8 +13,8 @@ class ArticleGenerator:
         self.database = database
         self.mongo = mongo
         self.meta_data = meta_data
-        self.prmpt = meta_data.prompt.get("pick_rate")
-        self.type = meta_data.prompt.get("pick_rate").get("type")
+        self.prmpt = meta_data.prompt
+        self.pick_rate_type = meta_data.prompt.get("pick_rate").get("type")
         tracer = LangChainTracer(
             project_name=os.getenv('LANGCHAIN_PROJECT', 'default-project')
         )
@@ -34,7 +34,7 @@ class ArticleGenerator:
         self.first_page_template = PromptTemplate(
             input_variables=["player_name", "champion_name", "position", "team_name", "pick_rate", "kda", "max_chars"],
             partial_variables={"format_instructions": self.parsers['first_page'].get_format_instructions()},
-            template=self.prmpt.get("long").get("page1")
+            template=self.prmpt.get("pick_rate").get("long").get("page1")
         )
 
         self.second_page_template = PromptTemplate(
@@ -43,7 +43,7 @@ class ArticleGenerator:
                     "patch_version", "pick_rate", "player_team", "mvp_champion",
                     "mvp_player", "mvp_score", "max_chars"],
             partial_variables={"format_instructions": self.parsers['second_page'].get_format_instructions()},
-            template=self.prmpt.get("long").get("page2")
+            template=self.prmpt.get("pick_rate").get("long").get("page2")
         )
 
         self.third_page_template = PromptTemplate(
@@ -53,13 +53,13 @@ class ArticleGenerator:
                 "time_frames", "max_chars", "stats", "player_stats_values", "opponent_stats_values", "label_mapping"
             ],
             partial_variables={"format_instructions": self.parsers['third_page'].get_format_instructions()},
-            template=self.prmpt.get("long").get("page3")
+            template=self.prmpt.get("pick_rate").get("long").get("page3")
         )
 
         self.fourth_page_template = PromptTemplate(
             input_variables=["champion_kr_name", "position", "tier", "pick_rate", "ban_rate", "win_rate", "ranking", "max_chars", "patch", "opponent_champion"],
             partial_variables={"format_instructions": self.parsers['fourth_page'].get_format_instructions()},
-            template=self.prmpt.get("long").get("page4")
+            template=self.prmpt.get("pick_rate").get("long").get("page4")
         )
 
         self.fifth_page_template = PromptTemplate(
@@ -67,31 +67,15 @@ class ArticleGenerator:
                 "player_name", "player_champion_kr", "position", "counters", "max_chars"
             ],
             partial_variables={"format_instructions": self.parsers['fifth_page'].get_format_instructions()},
-            template=self.prmpt.get("long").get("page5")
+            template=self.prmpt.get("pick_rate").get("long").get("page5")
         )
 
         self.interview_template = PromptTemplate(
             input_variables=[
                 "full_text"
             ],
-            partial_variables={"format_instructions": self.parser['interview'].get_format_instructions()},
-            template="""
-                당신은 인터뷰 내용을 분석하고 요약하는 전문가입니다.
-주어진 인터뷰 텍스트를 읽고, 다음 작업을 수행하세요:
-
- [작성 지침]
-    1. 전체 인터뷰를 대표할 수 있는 메인 타이틀을 생성하세요.
-    2. 인터뷰 내용에서 중요한 3-9개의 섹션을 식별하고 각각에 대해:
-        - 해당 섹션을 표현하는 부제목(subtitle)을 작성하세요.
-        - 해당 섹션의 핵심 내용을 간결하게 요약하세요.
-        - 자연스러운 한국어를 사용
-        - 리그오브레전드 게임임을 고려한 단어 선택
-
-{format_instructions}
-
-인터뷰 텍스트:
-{full_text}
-            """,
+            partial_variables={"format_instructions": self.parsers['interview'].get_format_instructions()},
+            template=self.prmpt.get("interview").get("v1")
         )
 
         self.chains = {
@@ -100,7 +84,7 @@ class ArticleGenerator:
             'third_page': self.third_page_template | self.llm | self.parsers['third_page'],
             'fourth_page': self.fourth_page_template | self.llm | self.parsers['fourth_page'],
             'fifth_page': self.fifth_page_template | self.llm | self.parsers['fifth_page'],
-            'interview': self.fifth_page_template | self.llm | self.parsers['interview']
+            'interview': self.interview_template | self.llm | self.parsers['interview']
         }
 
     def generate_first_page_article(self, game_df, player_name, max_chars):
@@ -124,7 +108,7 @@ class ArticleGenerator:
         return result['title']
 
     def generate_second_page_article(self, game_df, player_name, max_chars):
-        if self.type == "long":
+        if self.pick_rate_type == "long":
             player_data = game_df[game_df['playername'] == player_name].iloc[0]
             blue_team = game_df[game_df['side'] == 'Blue']
             red_team = game_df[game_df['side'] == 'Red']
@@ -161,7 +145,7 @@ class ArticleGenerator:
 
             result = self.chains['second_page'].invoke(template_variables)
             return result['text']
-        elif self.type == "short":
+        elif self.pick_rate_type == "short":
             template = self.prmpt.get("short").get("page2")
             mvp_player_info = self.database.get_mvp_player(game_df)
             player_data = game_df[game_df['playername'] == player_name].iloc[0]
@@ -196,7 +180,7 @@ class ArticleGenerator:
             return template
 
     def generate_third_page_article(self, game_df, player_name, max_chars):
-        if self.type == "long":
+        if self.pick_rate_type == "long":
             try:
                 player_data = game_df[game_df['playername'] == player_name].iloc[0]
                 opp_mask = (game_df['position'] == player_data['position']) & (game_df['playername'] != player_name)
@@ -223,7 +207,7 @@ class ArticleGenerator:
                 print(f"오류 타입: {type(e).__name__}")
                 print(f"오류 내용: {str(e)}")
                 return "기사 생성에 실패했습니다."
-        elif self.type == "short":
+        elif self.pick_rate_type == "short":
             template = self.prmpt.get("short").get("page3")
             player_data = game_df[game_df['playername'] == player_name].iloc[0]
             opp_mask = (game_df['position'] == player_data['position']) & (game_df['playername'] != player_name)
@@ -270,7 +254,7 @@ class ArticleGenerator:
 
 
     def generate_fourth_page_article(self, game_df, player_name, max_chars):
-        if self.type == "long":
+        if self.pick_rate_type == "long":
             player_data = game_df[game_df['playername'] == player_name].iloc[0]
             opp_player_data = game_df[
                 (game_df['position'] == player_data['position']) &
@@ -296,7 +280,7 @@ class ArticleGenerator:
                             }
             result = self.chains['fourth_page'].invoke(article_data)
             return result['text']
-        elif self.type == "short":
+        elif self.pick_rate_type == "short":
             player_data = game_df[game_df['playername'] == player_name].iloc[0]
             template = self.prmpt.get("short").get("page4")
             patch = self.meta_data.basic_info.get("patch")
@@ -318,7 +302,7 @@ class ArticleGenerator:
             return template
 
     def generate_fifth_page_article(self, match_id, player_name, max_chars):
-        if self.type == "long":
+        if self.pick_rate_type == "long":
             game_df = self.database.get_game_data(match_id)
             player_data = game_df[game_df['playername'] == player_name].iloc[0]
             counter_info = self.database.get_counter_champion(player_data['name_us'], player_data['position'], self.meta_data.basic_info.get("patch"))
@@ -347,7 +331,7 @@ class ArticleGenerator:
                 print(f"오류 발생 위치: {__file__}, 라인: {e.__traceback__.tb_lineno}")
                 print(f"오류 내용: {str(e)}")
                 return "기사 생성에 실패했습니다."
-        elif self.type == "short":
+        elif self.pick_rate_type == "short":
             game_df = self.database.get_game_data(match_id)
             player_data = game_df[game_df['playername'] == player_name].iloc[0]
             counter_info = self.database.get_counter_champion(player_data['name_us'], player_data['position'], self.meta_data.basic_info.get("patch"))
@@ -368,11 +352,9 @@ class ArticleGenerator:
             result = "\n".join(result_lines)
             return result
 
-    def generate_interview_summary(self, VIDEO_PATH):
-        document = self.mongo.find_by_video_path(VIDEO_PATH)
+    def generate_interview_summary(self, document):
         result = self.chains['interview'].invoke({"full_text":document['full_text']})
-        print(result)
-        return result['text']
+        return result
 
     def calculate_kda(self, kill, death, assist):
         if death == 0:
