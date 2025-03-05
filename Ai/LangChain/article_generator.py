@@ -13,7 +13,7 @@ class ArticleGenerator:
         self.database = database
         self.mongo = mongo
         self.meta_data = meta_data
-        self.prmpt = meta_data.prompt
+        self.prompt = meta_data.prompt
         self.pick_rate_type = meta_data.prompt.get("pick_rate").get("type")
         tracer = LangChainTracer(
             project_name=os.getenv('LANGCHAIN_PROJECT', 'default-project')
@@ -34,7 +34,7 @@ class ArticleGenerator:
         self.first_page_template = PromptTemplate(
             input_variables=["player_name", "champion_name", "position", "team_name", "pick_rate", "kda", "max_chars"],
             partial_variables={"format_instructions": self.parsers['first_page'].get_format_instructions()},
-            template=self.prmpt.get("pick_rate").get("long").get("page1")
+            template=self.prompt.get("pick_rate").get("long").get("page1")
         )
 
         self.second_page_template = PromptTemplate(
@@ -43,7 +43,7 @@ class ArticleGenerator:
                     "patch_version", "pick_rate", "player_team", "mvp_champion",
                     "mvp_player", "mvp_score", "max_chars"],
             partial_variables={"format_instructions": self.parsers['second_page'].get_format_instructions()},
-            template=self.prmpt.get("pick_rate").get("long").get("page2")
+            template=self.prompt.get("pick_rate").get("long").get("page2")
         )
 
         self.third_page_template = PromptTemplate(
@@ -53,13 +53,13 @@ class ArticleGenerator:
                 "time_frames", "max_chars", "stats", "player_stats_values", "opponent_stats_values", "label_mapping"
             ],
             partial_variables={"format_instructions": self.parsers['third_page'].get_format_instructions()},
-            template=self.prmpt.get("pick_rate").get("long").get("page3")
+            template=self.prompt.get("pick_rate").get("long").get("page3")
         )
 
         self.fourth_page_template = PromptTemplate(
             input_variables=["champion_kr_name", "position", "tier", "pick_rate", "ban_rate", "win_rate", "ranking", "max_chars", "patch", "opponent_champion"],
             partial_variables={"format_instructions": self.parsers['fourth_page'].get_format_instructions()},
-            template=self.prmpt.get("pick_rate").get("long").get("page4")
+            template=self.prompt.get("pick_rate").get("long").get("page4")
         )
 
         self.fifth_page_template = PromptTemplate(
@@ -67,7 +67,7 @@ class ArticleGenerator:
                 "player_name", "player_champion_kr", "position", "counters", "max_chars"
             ],
             partial_variables={"format_instructions": self.parsers['fifth_page'].get_format_instructions()},
-            template=self.prmpt.get("pick_rate").get("long").get("page5")
+            template=self.prompt.get("pick_rate").get("long").get("page5")
         )
 
         self.interview_template = PromptTemplate(
@@ -75,7 +75,7 @@ class ArticleGenerator:
                 "full_text"
             ],
             partial_variables={"format_instructions": self.parsers['interview'].get_format_instructions()},
-            template=self.prmpt.get("interview").get("v1")
+            template=self.prompt.get("interview").get("v1")
         )
 
         self.chains = {
@@ -146,7 +146,7 @@ class ArticleGenerator:
             result = self.chains['second_page'].invoke(template_variables)
             return result['text']
         elif self.pick_rate_type == "short":
-            template = self.prmpt.get("short").get("page2")
+            template = self.prompt.get("pick_rate").get("short").get("page2")
             mvp_player_info = self.database.get_mvp_player(game_df)
             player_data = game_df[game_df['playername'] == player_name].iloc[0]
 
@@ -208,7 +208,7 @@ class ArticleGenerator:
                 print(f"오류 내용: {str(e)}")
                 return "기사 생성에 실패했습니다."
         elif self.pick_rate_type == "short":
-            template = self.prmpt.get("short").get("page3")
+            template = self.prompt.get("pick_rate").get("short").get("page3")
             player_data = game_df[game_df['playername'] == player_name].iloc[0]
             opp_mask = (game_df['position'] == player_data['position']) & (game_df['playername'] != player_name)
             opp_player_name = game_df[opp_mask]['playername'].iloc[0]
@@ -282,7 +282,7 @@ class ArticleGenerator:
             return result['text']
         elif self.pick_rate_type == "short":
             player_data = game_df[game_df['playername'] == player_name].iloc[0]
-            template = self.prmpt.get("short").get("page4")
+            template = self.prompt.get("pick_rate").get("short").get("page4")
             patch = self.meta_data.basic_info.get("patch")
             champion_stats = self.database.get_champion_pick_rate_info(player_data['name_us'], patch, player_data['position'])
             line_kr = {"top": "탑", "jungle": "정글", "mid": "미드", "bottom": "원딜", "support": "서포터"}
