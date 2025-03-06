@@ -25,11 +25,11 @@ class ChampionDetection:
         self.patch = self.set_patch_version(self.basic_info)
         self.line_list = ["top","mid","jungle","bottom","support"]
 
-    def set_patch_version(self, anomaly_info):
-        if anomaly_info['patch'] == "latest":
-            return self.database.get_latest_patch()
+    def set_patch_version(self, basic_info):
+        if basic_info['patch'] == "latest":
+            return self.database.get_latest_patch_oracle_elixirs()
         else:
-            return anomaly_info['patch']
+            return basic_info['patch']
 
     def run_performance_score(self):
         self.update_performance_score()
@@ -78,6 +78,11 @@ class ChampionDetection:
                 print("----------------------------------------------")
         else:
             print("원거리 딜러를 2개 이상 픽한 게임이 없습니다.")
+
+    def run_penta_kill(self):
+        id_list = self.database.get_penta_kill_game_id(self.patch)
+        return id_list
+
 
     def run_pick_rate(self):
         """
