@@ -169,3 +169,5 @@ cython_debug/
 *.webp
 *.eot
 MyMetaData/key.json
+MyMetaData/google_credential.json
+MyMetaData/db_info.json

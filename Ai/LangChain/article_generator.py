@@ -302,55 +302,36 @@ class ArticleGenerator:
             return template
 
     def generate_fifth_page_article(self, match_id, player_name, max_chars):
-        if self.pick_rate_type == "long":
-            game_df = self.database.get_game_data(match_id)
-            player_data = game_df[game_df['playername'] == player_name].iloc[0]
-            counter_info = self.database.get_counter_champion(player_data['name_us'], player_data['position'], self.meta_data.basic_info.get("patch"))
-            player_champion_kr = self.database.get_name_kr(player_data['name_us'])
-            top_counters = counter_info.head(3)
-            try:
-                article_data = {
-                    'player_name': player_name,
-                    'player_champion_kr': player_champion_kr,
-                    'position': player_data['position'],
-                    'max_chars': max_chars,
-                    'counters': [
-                        {
-                            'name_kr': row['name_kr'],
-                            'win_rate': row['win_rate'],
-                            'games_played': row['games_played'],
-                            'kda_diff': row['kda_diff'],
-                            'counter_score': row['counter_score'],
-                        }
-                        for _, row in top_counters.iterrows()
-                    ]
-                }
-                result = self.chains['fifth_page'].invoke(article_data)
-                return result['text']
-            except Exception as e:
-                print(f"오류 발생 위치: {__file__}, 라인: {e.__traceback__.tb_lineno}")
-                print(f"오류 내용: {str(e)}")
-                return "기사 생성에 실패했습니다."
-        elif self.pick_rate_type == "short":
-            game_df = self.database.get_game_data(match_id)
-            player_data = game_df[game_df['playername'] == player_name].iloc[0]
-            counter_info = self.database.get_counter_champion(player_data['name_us'], player_data['position'], self.meta_data.basic_info.get("patch"))
-            player_champion_kr = self.database.get_name_kr(player_data['name_us'])
-            top_counters = counter_info.head(3)
-            result_lines = ["프로경기 카운터 픽 분석"]
-            for idx, row in top_counters.iterrows():
-                counter_num = idx + 1
-                line = [f"\u200b {counter_num}. {row['name_kr']}"]
-                if row['counter_score'] > 0:
-                    if row['win_rate'] > row['kda_diff'] * 10:
-                        line.append(f"ㆍ 상대 승률 {row['win_rate']:.0f}%로 상대하기 쉬움")
-                    else:
-                        line.append(f"ㆍ 평균 상대 KDA +{row['kda_diff']:.2f}로 상대하기 쉬움")
-                else:
-                    line.append(f"ㆍ 상대 승률 {row['win_rate']:.0f}%로 상대하기 어려움")
-                result_lines.append("\n".join(line))
-            result = "\n".join(result_lines)
+        game_df = self.database.get_game_data(match_id)
+        player_data = game_df[game_df['playername'] == player_name].iloc[0]
+        counter_info = self.database.get_counter_champion(player_data['name_us'], player_data['position'], self.meta_data.basic_info.get("patch"))
+        player_champion_kr = self.database.get_name_kr(player_data['name_us'])
+        top_counters = counter_info.head(3)
+        try:
+            article_data = {
+                'player_name': player_name,
+                'player_champion_kr': player_champion_kr,
+                'position': player_data['position'],
+                'max_chars': max_chars,
+                'counters': [
+                    {
+                        'name_kr': row['name_kr'],
+                        'win_rate': row['win_rate'],
+                        'games_played': row['games_played'],
+                        'kda_diff': row['kda_diff'],
+                        'counter_score': row['counter_score'],
+                    }
+                    for _, row in top_counters.iterrows()
+                ]
+            }
+            result = self.chains['fifth_page'].invoke(article_data)
+            print(result)
             return result
+        except Exception as e:
+            print(f"오류 발생 위치: {__file__}, 라인: {e.__traceback__.tb_lineno}")
+            print(f"오류 내용: {str(e)}")
+            return "기사 생성에 실패했습니다."
+
 
     def generate_interview_summary(self, document):
         result = self.chains['interview'].invoke({"full_text":document['full_text']})

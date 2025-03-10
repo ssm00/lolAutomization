@@ -20,6 +20,7 @@ class FourthPageResponse(BaseModel):
 class FifthPageResponse(BaseModel):
     text: str = Field(description="분석")
     chars: str = Field(description="생성한 text의 length")
+    recommend: str = Field(description="생성한 text의 length")
 
 class InterviewSummary(BaseModel):
     subtitle: str = Field(description="인터뷰 섹션의 부제목")

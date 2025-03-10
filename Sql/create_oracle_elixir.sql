@@ -1,4 +1,4 @@
-CREATE TABLE oracle_elixir(
+CREATE TABLE oracle_elixir_2025(
 	seq bigint primary key auto_increment,
     gameid VARCHAR(100),
     datacompleteness VARCHAR(50),
@@ -9,7 +9,7 @@ CREATE TABLE oracle_elixir(
     playoffs BOOLEAN,
     game_date DATETIME,
     game INT,
-    patch float,
+    patch decimal(4,2),
     participantid INT,
     side VARCHAR(10),
     position VARCHAR(20),
@@ -17,7 +17,7 @@ CREATE TABLE oracle_elixir(
     playerid VARCHAR(100),
     teamname VARCHAR(100),
     teamid VARCHAR(100),
-    champion VARCHAR(50),
+    name_us VARCHAR(50),
     ban1 VARCHAR(50),
     ban2 VARCHAR(50),
     ban3 VARCHAR(50),
@@ -165,7 +165,32 @@ CREATE TABLE oracle_elixir(
 alter table oracle_elixir modify column patch decimal(4,2); 
 drop table oracle_elixir;
 select patch from oracle_elixir;
-select * from oracle_elixir where patch = '13.24';
+select count(*) from oracle_elixir where patch = '14.23';
 select count(*) from oracle_elixir where patch=14.23 and participantid = 100;
+select * from oracle_elixir where Date(game_date) = "2024-08-24";
+select * from oracle_elixir where gameid = "LOLTMNT02_157559";
+use lol_dev;
+select * from oracle_elixir_2025;
+SELECT 
+    o.gameid,
+    o.position,
+    o.champion,
+    o.playername,
+    o.teamname,
+    o.patch,
+    p.performance_score,
+    p.win_rate,
+    p.pick_rate,
+    p.is_outlier
+FROM oracle_elixir o
+JOIN performance_score p 
+    ON o.position = p.line
+    and p.name_us = o.champion
+    and p.patch = o.patch
+WHERE p.is_outlier = true
+    AND o.position != 'team'
+    and o.patch = 14.23
+ORDER BY o.gameid, o.position;
 
+select * from performance_score where is_outlier = true and patch = 14.23 and line = "mid";
 

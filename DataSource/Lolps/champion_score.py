@@ -48,12 +48,12 @@ class ChampionScore:
 
     def update_score(self):
         try:
+            patch_info = self.database.get_latest_patch_and_url_number()
             for line_str, line_num in self.line_num.items():
-                url = self.score_url.format(103, 3, line_num)
+                url = self.score_url.format(patch_info['url_number'], 3, line_num)
                 get_score = re.get(url, headers=self.headers)
                 score_info = get_score.json()
-                self.database.insert_champion_score(line_str, 14.15, "master", "korea", score_info.get('data'))
+                self.database.insert_champion_score(line_str, patch_info['patch_version'], "master", "korea", score_info.get('data'))
         except re.exceptions.JSONDecodeError:
             print(f"PS 챔피언 스코어 가져오기 JSON 인코딩 에러 URL : {url} \n text : {get_score}")
-
 

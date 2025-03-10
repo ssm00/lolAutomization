@@ -1,27 +1,20 @@
-import os
-import textwrap
-from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageFilter
-import numpy as np
+from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
-import re as regex
 from datetime import datetime
-from Ai.article_generator import ArticleGenerator
-from AnomalyDetection.champion_detection import ChampionDetection
+from Ai.LangChain.article_generator import ArticleGenerator
 from ImageModifier.image_utils import BaseContentProcessor
-from util.commonException import CommonError, ErrorCode
 from AnomalyDetection.plt_draw import PltDraw
-import pandas as pd
+
 
 class PickRate(BaseContentProcessor):
 
-    def __init__(self, database, meta_data):
+    def __init__(self, database, meta_data, article_generator):
         super().__init__(database, meta_data)
         self.database = database
         self.meta_data = meta_data
         self.properties = meta_data.image_modifier_info
         self.background_dir = Path(__file__).parent.parent / "Assets" / "Image" / "background"
         self.pick_rate_assets_dir = Path(__file__).parent.parent / "Assets" / "PickRate"
-        # self.plt_dir = Path(__file__).parent.parent / "PltOutput"
         self.output_dir = Path(__file__).parent.parent / "ImageOutput" / "PickRate"
         self.main_font_size = self.properties.get("main_font_size")
         self.main_line_spacing = self.properties.get("main_line_spacing")
@@ -29,7 +22,7 @@ class PickRate(BaseContentProcessor):
         self.black = self.properties.get("black")
         self.tier_color = self.properties.get("tier_color")
         self.plt_draw = PltDraw(database, meta_data)
-        self.article_generator = ArticleGenerator(database, meta_data)
+        self.article_generator = article_generator
 
     def first_page(self, match_id, player_name):
         background_path = self.pick_rate_assets_dir / "1" / "background.png"
@@ -78,7 +71,7 @@ class PickRate(BaseContentProcessor):
         self.draw_table_info(background, win_team, lose_team, draw, mvp_score)
 
         box_size = (995,472)
-        max_chars = self.calculate_text_max_chars(self.main_font_path, self.main_font_size, box_size)
+        max_chars = self.calculate_text_max_chars(self.noto_font_bold_path, self.main_font_size, box_size)
         main_text = self.article_generator.generate_second_page_article(game_df, player_name, max_chars)
         self.add_main_text(background, main_text, (45, 850), box_size, 45)
         self.save_image(background, match_id, "2")
@@ -91,7 +84,7 @@ class PickRate(BaseContentProcessor):
         right_background = Image.open(self.pick_rate_assets_dir / "2" / "background2.png")
 
         #텍스트
-        max_chars = self.calculate_text_max_chars(self.main_font_path, self.main_font_size, (1000, 500))
+        max_chars = self.calculate_text_max_chars(self.noto_font_bold_path, self.main_font_size, (1000, 500))
         main_text = self.article_generator.generate_third_page_article(game_df, player_name, max_chars)
         self.add_main_text(left_background, main_text, (90, 190), (1000,500))
 
@@ -129,7 +122,7 @@ class PickRate(BaseContentProcessor):
         self.draw_line(left_background, (90, 420))
         
         #왼쪽 텍스트 추가
-        max_chars = self.calculate_text_max_chars(self.main_font_path, self.main_font_size, (1000, 700))
+        max_chars = self.calculate_text_max_chars(self.noto_font_bold_path, self.main_font_size, (1000, 700))
         main_text = self.article_generator.generate_fourth_page_article(game_df, player_name, max_chars)
         left_background = self.add_main_text(left_background, main_text, (70,450))
         champion_stats = self.database.get_champion_rate_table(name_us, self.meta_data.basic_info.get("patch"), player_df['position'])
@@ -152,21 +145,31 @@ class PickRate(BaseContentProcessor):
         background = Image.open(self.pick_rate_assets_dir / "5" / "background.png")
         counter_info = self.database.get_counter_champion(name_us, position, self.meta_data.basic_info.get("patch"))
 
-        table = Image.open(self.pick_rate_assets_dir / "5" / f"table3_2.png")
-        #background.paste(table, (11, 180), table)
-        background.paste(table, (41, 196), table)
+        table = Image.open(self.pick_rate_assets_dir / "5" / f"table3_3.png")
+        background.paste(table, (38, 58), table)
         background = self.draw_table_5(background, player_df, counter_info)
         
         #텍스트
-        max_chars = self.calculate_text_max_chars(self.main_font_path, self.main_font_size, (1000, 500))
-        main_text = self.article_generator.generate_fifth_page_article(match_id, player_name, max_chars)
-        self.add_main_text(background, main_text, (80, 740), (990, 500))
+        max_chars = self.calculate_text_max_chars(self.noto_font_bold_path, self.main_font_size, (940, 626))
+        result = self.article_generator.generate_fifth_page_article(match_id, player_name, max_chars)
+        recommend = result['recommend']
+        basic_recommend_ment = f'데일리 롤 코리아의 종합 의견 : '
+        if recommend == "적극 추천":
+            stamp_path = "highly_recommend.png"
+        elif recommend == "추천":
+            stamp_path = "recommend.png"
+        elif recommend == "보류":
+            stamp_path = "on_hold.png"
+        stamp = Image.open(self.pick_rate_assets_dir / "5" / stamp_path)
+        background.paste(stamp, (679, 1054), stamp)
+        self.add_main_text(background, result['text'], (72, 626), (940, 626))
+        self.add_main_text(background, basic_recommend_ment, (68, 1114), (689, 148))
         self.save_image(background, match_id, 7)
 
     def draw_result_table(self, background, win_team, lose_team, position):
         result_table = Image.open(self.pick_rate_assets_dir / "2" / "result2.png")
         result_draw = ImageDraw.Draw(result_table)
-        font = ImageFont.truetype(self.main_font_path, 18)
+        font = ImageFont.truetype(self.noto_font_bold_path, 18)
         win_team_name = win_team['teamname'].iloc[0]
         blue_bbox = font.getbbox(win_team_name)
         blue_text_width = blue_bbox[2] - blue_bbox[0]
@@ -184,15 +187,15 @@ class PickRate(BaseContentProcessor):
         layout = {
             'my_champion_start_x': 125,
             'my_champion_start_y': 238,
-            'start_x': 120,
-            'start_y': 420,
+            'start_x': 118,
+            'start_y': 282,
             'row_height': 100,
             'text_offsets': {
                 'name_kr': 100,
-                'winrate': 300,
-                'kda_diff': 500,
-                'counter_score': 640,
-                'games': 820
+                'winrate': 290,
+                'kda_diff': 490,
+                'counter_score': 650,
+                'games': 810
             },
             'text_y_offset': 10
         }
@@ -206,9 +209,9 @@ class PickRate(BaseContentProcessor):
         my_position_kr = position_kr_list[player_df['position']]
         my_champion_icon = Image.open(self.champion_icon_dir / f"{player_df['name_us']}.png")
         my_champion_icon = self.resize_circle(my_champion_icon, 80, 80)
-        background.paste(my_champion_icon, (layout['my_champion_start_x'], layout['my_champion_start_y']), my_champion_icon)
-        self.add_text_box(background, my_champion_kr, layout['my_champion_start_x'] + 120, layout['my_champion_start_y'] - 5, 30, colors['default'], self.noto_font_path)
-        self.add_text_box(background, my_position_kr, layout['my_champion_start_x'] + 120, layout['my_champion_start_y'] + 40, 25, colors['default'], self.noto_font_path)
+        #background.paste(my_champion_icon, (layout['my_champion_start_x'], layout['my_champion_start_y']), my_champion_icon)
+        #self.add_text_box(background, my_champion_kr, layout['my_champion_start_x'] + 120, layout['my_champion_start_y'] - 5, 30, colors['default'], self.noto_font_regular_path)
+        #self.add_text_box(background, my_position_kr, layout['my_champion_start_x'] + 120, layout['my_champion_start_y'] + 40, 25, colors['default'], self.noto_font_regular_path)
         num_counters = min(len(counter_info), 3)
         for i in range(num_counters):
             counter = counter_info.iloc[i]
@@ -233,7 +236,7 @@ class PickRate(BaseContentProcessor):
             for key, data in text_data.items():
                 x = layout['start_x'] + layout['text_offsets'][key]
                 y = current_y + layout['text_y_offset']
-                self.add_text_box(background, data['text'], x, y, 30, data['color'], self.noto_font_path)
+                self.add_text_box(background, data['text'], x, y, 30, data['color'], self.noto_font_regular_path)
         return background
 
     def second_page_basic(self, match_id, player_name):
@@ -245,7 +248,7 @@ class PickRate(BaseContentProcessor):
 
         background = Image.open(background_path)
         background = self.resize_image_type1(background)
-        self.add_title_text(background, "경기정보")
+        self.add_sub_title_text(background, "경기정보")
 
         self.draw_result_table(background, win_team, lose_team, (40, 200))
 
@@ -258,7 +261,7 @@ class PickRate(BaseContentProcessor):
         self.draw_table_info(background, win_team, lose_team, draw, mvp_score)
 
         box_size = (980,400)
-        max_chars = self.calculate_text_max_chars(self.main_font_path, self.main_font_size, box_size)
+        max_chars = self.calculate_text_max_chars(self.noto_font_bold_path, self.main_font_size, box_size)
         main_text = self.article_generator.generate_second_page_article(game_df, player_name, max_chars)
         self.add_main_text(background, main_text, (50, 890), box_size)
         self.save_image(background, match_id, "2")
@@ -267,7 +270,7 @@ class PickRate(BaseContentProcessor):
         draw = ImageDraw.Draw(image)
         table = Image.open(self.pick_rate_assets_dir / "4" / "table.png")
         image.paste(table, (98, 1050), table)
-        value_font = ImageFont.truetype(self.noto_font_path, 30)
+        value_font = ImageFont.truetype(self.noto_font_regular_path, 30)
         value_color = (255,255,255)
         stats_x = 160
         stats_y = 1070
@@ -310,7 +313,7 @@ class PickRate(BaseContentProcessor):
                     print(f"레드팀 ban 이미지 처리 중 오류: {e}")
 
     def draw_table_info(self, background, win_team, lose_team, draw, mvp_score):
-        font = ImageFont.truetype(self.main_font_path, 20)
+        font = ImageFont.truetype(self.noto_font_bold_path, 20)
         positions = ['top', 'jungle', 'mid', 'bottom', 'support']
         row_start_y = 390
         row_height = 91
@@ -362,9 +365,6 @@ class PickRate(BaseContentProcessor):
             draw.text((right_side['player'], current_y + 5), str(red_pos_data['playername']), font=font, fill='white')
             draw.text((right_side['player']+10, current_y + 40), f"{red_score:.1f}", font=font, fill='#FFD700')
 
-    def convert_to_grayscale(self, image):
-        return image.convert('L').convert('RGBA')
-
     def third_page_basic(self, match_id, player_name):
         game_df = self.database.get_game_data(match_id)
         player_df = game_df[game_df['playername'] == player_name].iloc[0]
@@ -372,10 +372,10 @@ class PickRate(BaseContentProcessor):
         background = Image.open(self.champion_background_dir / f"{name_us}.png")
         background = self.resize_image_type2(background)
         background = self.add_bottom_gradient(background, 2700)
-        self.add_title_text(background, "성과지표 비교")
+        self.add_sub_title_text(background, "성과지표 비교")
         self.draw_line(background, (50, 170))
 
-        max_chars = self.calculate_text_max_chars(self.main_font_path, self.main_font_size, (1000, 500))
+        max_chars = self.calculate_text_max_chars(self.noto_font_bold_path, self.main_font_size, (1000, 500))
         main_text = self.article_generator.generate_third_page_article(game_df, player_name, max_chars)
         self.add_main_text(background, main_text, (50, 190), (1000,500))
 
@@ -404,7 +404,7 @@ class PickRate(BaseContentProcessor):
         champion_background = self.resize_image_type2(champion_background)
         champion_background = self.add_bottom_gradient(champion_background,2500)
 
-        self.add_title_text(champion_background, "챔피언 픽률")
+        self.add_sub_title_text(champion_background, "챔피언 픽률")
 
         champion_icon = Image.open(self.champion_icon_dir / f"{name_us}.png")
         champion_icon = self.resize_image(champion_icon, 175, 175)
@@ -413,7 +413,7 @@ class PickRate(BaseContentProcessor):
 
         self.draw_line(champion_background, (50,385))
 
-        max_chars = self.calculate_text_max_chars(self.main_font_path, self.main_font_size, (1000, 700))
+        max_chars = self.calculate_text_max_chars(self.noto_font_bold_path, self.main_font_size, (1000, 700))
         main_text = self.article_generator.generate_fourth_page_article(game_df, player_name, max_chars)
         champion_background = self.add_main_text(champion_background, main_text, (50,410))
         champion_stats = self.database.get_champion_rate_table(name_us, self.meta_data.basic_info.get("patch"), player_df['position'])
@@ -435,7 +435,7 @@ class PickRate(BaseContentProcessor):
         background = Image.open(self.background_dir / "background1.png")
         background = self.resize_image_type1(background)
         background = self.add_bottom_gradient(background, 1350)
-        self.add_title_text(background, "카운터 픽")
+        self.add_sub_title_text(background, "카운터 픽")
 
         counter_info = self.database.get_counter_champion(name_us, position, self.meta_data.basic_info.get("patch"))
 
@@ -446,7 +446,7 @@ class PickRate(BaseContentProcessor):
         textbox_image = Image.open(self.background_dir / "textbox.png")
         background.paste(textbox_image, (29, 770), textbox_image)
 
-        max_chars = self.calculate_text_max_chars(self.main_font_path, self.main_font_size, (1000, 500))
+        max_chars = self.calculate_text_max_chars(self.noto_font_bold_path, self.main_font_size, (1000, 500))
         main_text = self.article_generator.generate_fifth_page_article(match_id, player_name, max_chars)
         self.add_main_text(background, main_text, (50, 790), (1000, 500))
         self.save_image(background, match_id, 7)

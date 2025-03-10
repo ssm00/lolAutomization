@@ -62,7 +62,6 @@ class Database:
                             INSERT INTO oracle_elixir_{self.year} ({columns})
                             VALUES ({placeholders})
                         """
-
         for index, row in df.iterrows():
             try:
                 values = [self.process_value(val) for val in row]
@@ -74,6 +73,46 @@ class Database:
                     print(f"Error inserting row {index + 1}: {e}")
                     print(f"Problematic row data: {row}")
                     continue
+        self.commit()
+
+    def get_last_date_from_db(self):
+        query = f"SELECT MAX(game_date) FROM oracle_elixir_{self.year}"
+        result = self.fetch_one(query)['MAX(game_date)']
+        return result
+
+    def get_latest_patch_and_url_number(self):
+        query = """
+        SELECT patch_version, url_number 
+        FROM patch_version_mapping
+        ORDER BY patch_version DESC
+        LIMIT 1
+        """
+        result = self.fetch_one(query)
+        if result:
+            return {"patch_version": result['patch_version'], "url_number": result['url_number']}
+        return None
+
+    def get_url_number(self, patch_version):
+        query = "SELECT url_number FROM patch_version_mapping WHERE patch_version = %s"
+        self.cursor.execute(query, patch_version)
+        result = self.cursor.fetchone()
+        if result:
+            return result['url_number']
+        return None
+
+    def update_patch_url_number(self):
+        latest_patch_version = self.get_latest_patch_oracle_elixirs()
+        #이미 최신이라 업데이트 안해도 되면 그냥 반환
+        url_number = self.get_url_number(latest_patch_version)
+        if url_number is not None:
+            return
+        latest = self.get_latest_patch_and_url_number()
+        new_url_number = latest["url_number"] + 1
+        insert_query = """
+        INSERT INTO patch_version_mapping (patch_version, url_number)
+        VALUES (%s, %s)
+        """
+        self.cursor.execute(insert_query, (latest_patch_version, new_url_number))
         self.commit()
 
     def insert_champion_score(self, line, patch, survey_target_tier, region, data_list):
@@ -216,9 +255,9 @@ class Database:
             """
         return pd.read_sql(select_query, self.connection)
 
-    def get_latest_patch(self):
+    def get_latest_patch_oracle_elixirs(self):
         select_query = f"select max(patch) from oracle_elixir_{self.year}"
-        return self.fetch_one(select_query)
+        return self.fetch_one(select_query)['max(patch)']
 
     def get_all_champion_list(self, patch):
         position_champions = {}
@@ -278,6 +317,11 @@ class Database:
         and cb.name_us not in (select name_us from champion_score_mid)
         """
         return pd.read_sql(select_query, self.connection)['name_us'].tolist()
+
+    def get_penta_kill_game_id(self, patch):
+        select_query = f"""select playername, gameid from oracle_elixir_{self.year} where pentakills >= 1 and patch = %s and playername is not null"""
+        id_list = self.fetch_all(select_query, patch)
+        return id_list
 
     def get_match_series_info(self, game_id, player_name):
         select_query = f"""
@@ -402,16 +446,26 @@ class Database:
         return champion_stats
 
     def get_champion_pick_rate_info(self, name_us, patch, position):
-        select_query = f"select name_kr, ranking, pick_rate, win_rate, ban_rate, champion_tier from champion_score_{position} where name_us = (%s) and patch = (%s) "
-        result = self.fetch_one(select_query, args=(name_us, patch))
+        select_query = f"""
+        select name_kr, ranking, pick_rate, win_rate, ban_rate, champion_tier,
+         (SELECT COUNT(*) FROM champion_score_{position} WHERE patch = %s) as total_champion_count, 
+         (select COUNT(*) + 1 FROM champion_score_{position} c2 WHERE c2.pick_rate > c1.pick_rate AND patch = %s) as pick_rank, 
+         (select COUNT(*) + 1 FROM champion_score_{position} c2 WHERE c2.win_rate > c1.win_rate AND patch = %s) as win_rank, 
+         (select COUNT(*) + 1 FROM champion_score_{position} c2 WHERE c2.ban_rate > c1.ban_rate AND patch = %s) as ban_rank 
+         from champion_score_{position} c1 where name_us = %s and patch = %s """
+        result = self.fetch_one(select_query, args=(patch, patch, patch, patch, name_us, patch))
         champion_stats = {
             "position": position,
             "name_kr": result['name_kr'],
+            "total_champion_count": result['total_champion_count'],
             "ranking": result['ranking'],
             "pick_rate": result['pick_rate'],
             "win_rate": result['win_rate'],
             "ban_rate": result['ban_rate'],
-            "tier": result['champion_tier']
+            "tier": result['champion_tier'],
+            "pick_rank": result['pick_rank'],
+            "win_rank": result['win_rank'],
+            "ban_rank": result['ban_rank']
         }
         return champion_stats
 
@@ -427,8 +481,8 @@ class Database:
                         m1.result as target_won,
                         m1.golddiffat15,
                         m1.xpdiffat15,
-                        (m1.killsat15 + m1.assistsat15) / CASE WHEN m1.deathsat15 = 0 THEN 1 ELSE m1.deathsat15 END as target_kda15,
-                        (m2.killsat15 + m2.assistsat15) / CASE WHEN m2.deathsat15 = 0 THEN 1 ELSE m2.deathsat15 END as opponent_kda15
+                        (m1.kills + m1.assists) / CASE WHEN m1.deaths = 0 THEN 1 ELSE m1.deaths END as target_kda,
+                        (m2.kills + m2.assists) / CASE WHEN m2.deaths = 0 THEN 1 ELSE m2.deaths END as opponent_kda
                     FROM oracle_elixir_{self.year} m1
                     JOIN oracle_elixir_{self.year} m2 
                         ON m1.gameid = m2.gameid
@@ -445,7 +499,7 @@ class Database:
                     ROUND(AVG(CASE WHEN m.target_won = 1 THEN 1 ELSE 0 END) * 100, 2) as win_rate,
                     ROUND(AVG(m.golddiffat15), 2) as avg_gold_diff_15,
                     ROUND(AVG(m.xpdiffat15), 2) as avg_xp_diff_15,
-                     ROUND(AVG(m.target_kda15), 2) + ROUND(AVG(m.opponent_kda15), 2) as kda_diff
+                     ROUND(AVG(m.target_kda), 2) + ROUND(AVG(m.opponent_kda), 2) as kda_diff
                 FROM matchups m
                 LEFT JOIN champion_info ci ON m.opponent_champ = ci.ps_name  
                 GROUP BY m.opponent_champ, ci.name_kr 
@@ -564,8 +618,8 @@ class Database:
 
             stats = base_stats + ['dragons', 'barons']
             stats_values = {
-                'player': [player_df[stat] for stat in base_stats] + [player_team['dragons'], player_team['barons']],
-                'opponent': [opp_player_df[stat] for stat in base_stats] + [opp_team['dragons'], opp_team['barons']]
+                'player': [player_df[stat] for stat in base_stats] + [int(player_team['dragons']), int(player_team['barons'])],
+                'opponent': [opp_player_df[stat] for stat in base_stats] + [int(opp_team['dragons']), int(opp_team['barons'])]
             }
 
         else:  # support
@@ -622,7 +676,6 @@ class Database:
         }
         self.cursor.execute(query, params)
         self.commit()
-
 
     def get_patch_url_list(self):
         query = "select patch, url from patch_info"
@@ -758,6 +811,7 @@ class Database:
             mvp_scores.append({
                 'playername': player['playername'],
                 'champion': player['name_us'],
+                'teamname': player['teamname'],
                 'name_kr': self.get_name_kr(player['name_us']),
                 'position': position,
                 'mvp_score': final_score
@@ -772,3 +826,62 @@ class Database:
         mvp_df['mvp_score'] = mvp_df['mvp_score'].clip(0, 10)
         mvp_df = mvp_df.sort_values('mvp_score', ascending=False)
         return mvp_df
+
+    def get_sets_score(self, game_id, blue_team_name, red_team_name):
+        info_query = f"""select game_date, game, league from oracle_elixir_{self.year} where gameid = %s"""
+        base_info = self.fetch_one(info_query, game_id)
+        game_date = base_info.get('game_date')
+        game = base_info.get('game')
+        league = base_info.get('league')
+        info_query = f"""select * from oracle_elixir_{self.year} where league = %s and (teamname = %s or teamname = %s) and position = 'team' and game_date between Date(%s) and Date_Add(Date(%s), interval 1 Day) order by game_date"""
+        info = pd.read_sql(info_query, self.connection, params=(league, blue_team_name, red_team_name, game_date, game_date))
+        blue_score = len(info[(info['teamname'] == blue_team_name) & (info['result'] == 1)])
+        red_score = len(info[(info['teamname'] == red_team_name) & (info['result'] == 1)])
+        return blue_score, red_score
+
+    def get_sets_game_id(self, game_id, blue_team_name, red_team_name):
+        info_query = f"""select game_date, game, league from oracle_elixir_{self.year} where gameid = %s"""
+        base_info = self.fetch_one(info_query, game_id)
+        game_date = base_info.get('game_date')
+        game = base_info.get('game')
+        league = base_info.get('league')
+        info_query = f"""select gameid, game from oracle_elixir_{self.year} where league = %s and (teamname = %s or teamname = %s) and position = 'team' and game_date between Date(%s) and Date_Add(Date(%s), interval 1 Day)"""
+        info = pd.read_sql(info_query, self.connection, params=(league, blue_team_name, red_team_name, game_date, game_date))
+        print(info)
+        result = info.sort_values('game').groupby('gameid').first().reset_index()
+        print(result)
+        return result
+ 
+    def get_league_title(self, game_id):
+        query = f"select league, game_year, split from oracle_elixir_{self.year} where gameid = %s"
+        info = self.fetch_one(query, game_id)
+        return info
+
+    def calculate_overall_mvp_score(self, game_df, match_id, player_name):
+        info_query = f"""select game_date, game, league from oracle_elixir_{self.year} where gameid = %s"""
+        base_info = self.fetch_one(info_query, match_id)
+        game_date = base_info.get('game_date')
+        game = base_info.get('game')
+        league = base_info.get('league')
+        player_team = game_df[game_df['playername'] == player_name]['teamname'].iloc[0]
+        opp_team = game_df[game_df['teamname'] != player_team]['teamname'].iloc[0]
+        info_query = f"""select * from oracle_elixir_{self.year} where league = %s and (teamname = %s or teamname = %s) and position = 'team' and game_date between Date(%s) and Date_Add(Date(%s), interval 1 Day) order by game_date"""
+        series_data = pd.read_sql(info_query, self.connection, params=(league, player_team, opp_team, game_date, game_date))
+
+        game_ids = series_data['gameid'].unique()
+
+        all_mvp_scores = []
+        for game_id in game_ids:
+            game_data = self.get_game_data(game_id)
+            mvp_df = self.calculate_mvp_score(game_data)
+            game_num = game_data['game'].iloc[0]
+            mvp_df['game'] = game_num
+            all_mvp_scores.append(mvp_df)
+
+        combined_mvp = pd.concat(all_mvp_scores)
+        overall_mvp = combined_mvp.groupby(['playername', 'position', 'teamname']).agg({
+            'mvp_score': 'mean',
+            'name_kr': lambda x: ', '.join(set(x))
+        }).reset_index()
+        overall_mvp = overall_mvp.sort_values('mvp_score', ascending=False)
+        return overall_mvp

@@ -26,9 +26,9 @@ class BaseContentProcessor(ABC):
 
     def _setup_fonts(self):
         base_path = Path(__file__).parent.parent / "Assets" / "Font"
-        self.title_font_path = base_path / "Cafe24Ohsquare-v2.0" / "Cafe24Ohsquare-v2.0.ttf"
-        self.main_font_path = base_path / "Noto_Sans_KR" / "static" / "NotoSansKR-Bold.ttf"
-        self.noto_font_path = base_path / "Noto_Sans_KR" / "NotoSansKR-VariableFont_wght.ttf"
+        self.cafe24_font_path = base_path / "Cafe24Ohsquare-v2.0" / "Cafe24Ohsquare-v2.0.ttf"
+        self.noto_font_bold_path = base_path / "Noto_Sans_KR" / "static" / "NotoSansKR-Bold.ttf"
+        self.noto_font_regular_path = base_path / "Noto_Sans_KR" / "NotoSansKR-VariableFont_wght.ttf"
         self.anton_font_path = base_path / "Anton,Noto_Sans_KR" / "Anton" / "Anton-Regular.ttf"
         self.main_font_size = self.properties.get("main_font_size")
         self.main_line_spacing = self.properties.get("main_line_spacing")
@@ -48,7 +48,7 @@ class BaseContentProcessor(ABC):
 
     def add_text_box(self, image, text, x, y, font_size=20, color=(0, 0, 0), font_path=None):
         draw = ImageDraw.Draw(image)
-        if font_path is None: font_path = self.main_font_path
+        if font_path is None: font_path = self.noto_font_bold_path
         font = ImageFont.truetype(font_path, font_size)
         draw.text((x, y), str(text), font=font, fill=color)
 
@@ -93,12 +93,15 @@ class BaseContentProcessor(ABC):
         draw = ImageDraw.Draw(image)
         draw.rectangle([x, y, x + w, y + h], fill=color)
 
+    def convert_to_grayscale(self, image):
+        return image.convert('L').convert('RGBA')
+
     def add_main_text(self, image, text, position, box_size=(990, 700), font_size=50):
         draw = ImageDraw.Draw(image)
         x, y = position
         box_width, box_height = box_size
         #draw.rectangle([x, y, x + box_width, y + box_height], fill=(255, 255, 255, 30))
-        main_font = ImageFont.truetype(self.main_font_path, font_size)
+        main_font = ImageFont.truetype(self.noto_font_bold_path, font_size)
         main_text_color = (255, 255, 255)
         number_color = "#C89B3C"
 
@@ -130,7 +133,7 @@ class BaseContentProcessor(ABC):
             for word in line.split():
                 word_start_x = current_x
                 for char in word:
-                    is_numeric = char.isdigit() or char == '.' or char == '%'
+                    is_numeric = char.isdigit() or char == 'ㆍ' or char == '%'
                     char_width = draw.textlength(char, font=main_font)
                     color = number_color if is_numeric else main_text_color
                     draw.text((current_x, y), char, font=main_font, fill=color)
@@ -142,9 +145,9 @@ class BaseContentProcessor(ABC):
                 break
         return image
 
-    def add_title_text(self, image, text, x=50, y=50):
+    def add_sub_title_text(self, image, text, x=50, y=50):
         draw = ImageDraw.Draw(image)
-        font = ImageFont.truetype(self.title_font_path, self.title_font_size)
+        font = ImageFont.truetype(self.cafe24_font_path, self.title_font_size)
         shadow_color = '#2B2B2B'
         shadow_offset = 8
         for i in range(2):
@@ -159,21 +162,21 @@ class BaseContentProcessor(ABC):
                               text, font=font, fill='black')
         draw.text((x, y), text, font=font, fill='white')
 
-    def add_first_page_title(self, image, text, x, y, box_width=890, box_height=150):
+    def add_first_page_title(self, image, text, x=120, y=990, box_width=890, box_height=150):
         min_font_size = 50
         current_font_size = self.title_font_size
+        draw = ImageDraw.Draw(image)
+        pattern = r'\^(.*?)\^'
+        parts = regex.split(pattern, text)
+        words = []
+        for i, part in enumerate(parts):
+            if not part:
+                continue
+            part_words = part.split()
+            for word in part_words:
+                words.append((word, i % 2 == 1))
         while current_font_size >= min_font_size:
-            draw = ImageDraw.Draw(image)
-            font = ImageFont.truetype(self.title_font_path, current_font_size)
-            pattern = r'\^(.*?)\^'
-            parts = regex.split(pattern, text)
-            words = []
-            for i, part in enumerate(parts):
-                if not part:
-                    continue
-                part_words = part.split()
-                for word in part_words:
-                    words.append((word, i % 2 == 1))
+            font = ImageFont.truetype(self.cafe24_font_path, current_font_size)
 
             def calculate_line_width(line):
                 total_width = 0
@@ -183,15 +186,31 @@ class BaseContentProcessor(ABC):
                 return total_width
             test_line = [(word, highlight) for word, highlight in words]
             total_width = calculate_line_width(test_line)
+            line_height = int(current_font_size + current_font_size * 0.2)
+            test_lines = []
+            test_line = []
+            test_x = 0
 
-            if total_width <= box_width:
+            for word, is_highlighted in words:
+                bbox = draw.textbbox((0, 0), word + " ", font=font)
+                word_width = bbox[2] - bbox[0]
+
+                if test_x + word_width > box_width:
+                    test_lines.append(test_line)
+                    test_line = []
+                    test_x = 0
+
+                test_line.append((word, is_highlighted))
+                test_x += word_width
+            if test_line:
+                test_lines.append(test_line)
+            total_height = len(test_lines) * line_height
+            if total_width <= box_width or (current_font_size == min_font_size and total_height <= box_height):
                 break
             current_font_size -= 10
-
         if current_font_size < min_font_size:
             current_font_size = min_font_size
-            font = ImageFont.truetype(self.title_font_path, current_font_size)
-
+            font = ImageFont.truetype(self.cafe24_font_path, current_font_size)
         def draw_text_with_effects(x, y, word, is_highlighted):
             shadow_color = '#2B2B2B'
             shadow_offset = max(3, int(current_font_size / self.title_font_size * 8))
@@ -208,46 +227,55 @@ class BaseContentProcessor(ABC):
 
             text_color = '#ef2c28' if is_highlighted else 'white'
             draw.text((x, y), word + " ", font=font, fill=text_color)
-        #draw.rectangle([x, y, x + box_width, y + box_height], fill=(0, 0, 255, 128))
+        # draw.rectangle([x, y, x + box_width, y + box_height], fill=(0, 0, 255, 128))  # 디버깅용
+        line_height = int(current_font_size + current_font_size * 0.2)
         current_x = x
-        current_y = y
-        line_height = int(current_font_size + current_font_size * 0.2)  # Adjust line height based on font size
         current_line = []
         lines = []
-
         for word, is_highlighted in words:
             bbox = draw.textbbox((0, 0), word + " ", font=font)
             word_width = bbox[2] - bbox[0]
-
             if current_x + word_width > x + box_width:
-                lines.append(current_line)
-                current_line = []
-                current_x = x
-
-            current_line.append((word, is_highlighted))
-            current_x += word_width
-
+                if len(current_line) == 0:
+                    current_line.append((word, is_highlighted))
+                    lines.append(current_line)
+                    current_line = []
+                    current_x = x
+                else:
+                    lines.append(current_line)
+                    current_line = [(word, is_highlighted)]
+                    current_x = x + word_width
+                    continue
+            else:
+                current_line.append((word, is_highlighted))
+                current_x += word_width
         if current_line:
             lines.append(current_line)
-        total_lines_height = len(lines) * current_font_size + 30
+        total_lines_height = len(lines) * line_height
         if total_lines_height > box_height:
-            vertical_padding = 0
-        else:
-            vertical_padding = (box_height - total_lines_height) // 2
-
+            line_height = min(line_height, int(box_height / len(lines)))
+            total_lines_height = len(lines) * line_height
+        vertical_padding = max(0, (box_height - total_lines_height) // 2)
         current_y = y + vertical_padding
+        use_center_align = (len(lines) == 1)
         for line in lines:
             if current_y + line_height > y + box_height:
                 break
-            line_width = calculate_line_width(line)
-            start_x = x + (box_width - line_width) // 2
+            if use_center_align:
+                line_width = sum(
+                    draw.textbbox((0, 0), word + " ", font=font)[2] - draw.textbbox((0, 0), word + " ", font=font)[0]
+                    for word, _ in line)
+                start_x = x + (box_width - line_width) // 2
+            else:
+                start_x = x
             current_x = start_x
             for word, is_highlighted in line:
                 bbox = draw.textbbox((0, 0), word + " ", font=font)
                 word_width = bbox[2] - bbox[0]
                 draw_text_with_effects(current_x, current_y, word, is_highlighted)
                 current_x += word_width
-            current_y += current_font_size + line_height
+            current_y += line_height
+
 
     def add_gradient_border(self, image, border_size=20):
         width, height = image.size
