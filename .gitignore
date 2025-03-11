@@ -171,3 +171,4 @@ cython_debug/
 MyMetaData/key.json
 MyMetaData/google_credential.json
 MyMetaData/db_info.json
+/Assets/Video
