@@ -1,6 +1,3 @@
-import json
-from urllib.parse import urlparse
-
 import requests as re
 import re as regex
 from pathlib import Path
@@ -8,7 +5,6 @@ from PIL import Image
 import io
 from bs4 import BeautifulSoup
 import os
-import onnxruntime as ort
 
 class ImageDownload:
 
