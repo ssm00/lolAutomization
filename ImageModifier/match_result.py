@@ -3,11 +3,11 @@ from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
 from ImageModifier.image_utils import BaseContentProcessor
-
+from Ai.LangChain.article_generator import ArticleGenerator
 
 class MatchResult(BaseContentProcessor):
 
-    def __init__(self, database, meta_data):
+    def __init__(self, database, meta_data, article_generator):
         super().__init__(database, meta_data)
         self.database = database
         self.meta_data = meta_data
@@ -25,22 +25,20 @@ class MatchResult(BaseContentProcessor):
         self.player_name_font_size = self.properties.get("match_result_player_name_font_size")
         self.title_font_size = self.properties.get("title_font_size")
 
+        self.article_generator = article_generator
 
 
-    def title_page(self, match_id, player_name, article_type):
+    def title_page(self, match_id, player_name, detection_type):
         background = Image.open(self.title_background_dir)
         game_df = self.database.get_game_data(match_id)
         player_team = game_df[game_df['playername'] == player_name]['teamname'].iloc[0]
         opp_team_name = game_df[game_df['teamname'] != player_team]['teamname'].iloc[0]
-        name_us = game_df[game_df['teamname'] != player_team]['name_us'].iloc[0]
+        game_date = datetime.strftime(game_df['game_date'].iloc[0], "%Y/%m/%d")
         league_title = f"{game_df['game_year'].iloc[0]} {game_df['league'].iloc[0]} {game_df['split'].iloc[0]}"
 
-        #선수,
+        #선수
         player_image = self.get_player_image(player_name, 520, 467)
-        background.paste(player_image, (470, 461), player_image)
-        #gradient = Image.open(self.gradient_dir)
-        #background.paste(gradient, (90,230), gradient)
-        #background = self.add_gradient_box(background, 90, 230, 900, 700)
+        background.paste(player_image, (470, 369), player_image)
 
         #팀로고
         player_team_icon = Image.open(self.team_icon_dir / f"{player_team}.png")
@@ -50,13 +48,16 @@ class MatchResult(BaseContentProcessor):
         background.paste(player_team_icon, (134,270), player_team_icon)
         background.paste(opp_team_icon, (134,636), opp_team_icon)
 
-        #스코어
+        #스코어, 리그, 날짜
         player_team_score, opp_team_score = self.database.get_sets_score(match_id, player_team, opp_team_name)
         self.add_text_box(background, player_team_score, 395, 297, 96, (255,255,255), self.anton_font_path)
         self.add_text_box(background, opp_team_score, 395, 663, 96, (255,255,255), self.anton_font_path)
-
         self.add_text_box(background, league_title, 134, 512, 45, (255,255,255), self.noto_font_bold_path)
-        self.add_first_page_title(background, "펜타킬 한 도란", 100,990)
+        self.add_text_box(background, game_date, 822, 209, 36, (255,255,255), self.noto_font_bold_path)
+
+        # 메인 제목
+        title = self.article_generator.generate_match_result_title(detection_type, game_df, player_name)
+        self.add_first_page_title(background, title)
         self.save_image(background, match_id, "1")
 
 
@@ -66,37 +67,48 @@ class MatchResult(BaseContentProcessor):
         player_team = game_df[game_df['playername'] == player_name]['teamname'].iloc[0]
         opp_team_name = game_df[game_df['teamname'] != player_team]['teamname'].iloc[0]
         game_id_list = self.database.get_sets_game_id(match_id, player_team, opp_team_name)['gameid']
-        prefix_index = 2
-        print(game_id_list)
+        page_index = 2
         for index, game_id in enumerate(game_id_list):
-            save_path = self.output_dir / today_date / match_id / f"{prefix_index+index}.png"
+            save_path = self.output_dir / today_date / match_id / f"{page_index+index}.png"
             if game_id == match_id:
                 self.one_set_page(game_id, player_name, save_path, True)
             else:
                 self.one_set_page(game_id, player_name, save_path)
-        return prefix_index + len(game_id_list) - 1
+        return page_index + len(game_id_list) - 1
 
     def one_set_page(self, match_id, player_name, save_path, highlight_player=False):
         background = Image.open(self.set_result_dir)
         game_df = self.database.get_game_data(match_id)
         player_team_name = game_df[game_df['playername'] == player_name]['teamname'].iloc[0]
         opp_team_name = game_df[game_df['teamname'] != player_team_name]['teamname'].iloc[0]
-        name_us = game_df[game_df['teamname'] != player_team_name]['name_us'].iloc[0]
 
         # 팀 로고
         player_team_icon = Image.open(self.team_icon_dir / f"{player_team_name}.png")
         opp_team_icon = Image.open(self.team_icon_dir / f"{opp_team_name}.png")
         player_team_icon = self.resize_image(player_team_icon, 150, 150)
         opp_team_icon = self.resize_image(opp_team_icon, 150, 150)
-        background.paste(player_team_icon, (154, 240), player_team_icon)
-        background.paste(opp_team_icon, (768, 240), opp_team_icon)
+        background.paste(player_team_icon, (158, 230), player_team_icon)
+        background.paste(opp_team_icon, (771, 230), opp_team_icon)
         
-        #경기 결과 정보
+        # 세트 정보, 승패 정보
+        win_text = Image.open(self.assets_dir / "win.png")
+        lose_text = Image.open(self.assets_dir / "lose.png")
+        player_team_result = game_df[game_df['playername'] == player_name]['result'].iloc[0]
+        set_info = f"{game_df[game_df['playername'] == player_name]['game'].iloc[0]} SET"
+        if player_team_result == 1:
+            background.paste(win_text, (364, 279), win_text)
+            background.paste(lose_text, (663, 279), lose_text)
+        else:
+            background.paste(lose_text, (364, 279), lose_text)
+            background.paste(win_text, (663, 279), win_text)
+        self.add_text_box(background, set_info, 472, 275, 50, "#C89B3C", self.noto_font_bold_path)
+
+        # 경기 결과 테이블
         player_team = game_df[(game_df['teamname'] == player_team_name)]
         opp_player_team = game_df[(game_df['teamname'] == opp_team_name)]
         self.draw_result_table(background, player_team, opp_player_team, (42, 412))
 
-        # 경기 전체 정보
+        # 경기 전체 테이블
         mvp_score = self.database.calculate_mvp_score(game_df)
         table = Image.open(self.assets_dir / "table.png")
         background.paste(table, (42, 534), table)
@@ -114,19 +126,18 @@ class MatchResult(BaseContentProcessor):
         game_df = self.database.get_game_data(match_id)
         player_team_name = game_df[game_df['playername'] == player_name]['teamname'].iloc[0]
         opp_team_name = game_df[game_df['teamname'] != player_team_name]['teamname'].iloc[0]
-        name_us = game_df[game_df['teamname'] != player_team_name]['name_us'].iloc[0]
 
         #팀 로고
         player_team_icon = Image.open(self.team_icon_dir / f"{player_team_name}.png")
         opp_team_icon = Image.open(self.team_icon_dir / f"{opp_team_name}.png")
         player_team_icon = self.resize_image(player_team_icon, 150, 150)
         opp_team_icon = self.resize_image(opp_team_icon, 150, 150)
-        background.paste(player_team_icon, (154, 240), player_team_icon)
-        background.paste(opp_team_icon, (768, 240), opp_team_icon)
+        background.paste(player_team_icon, (159, 224), player_team_icon)
+        background.paste(opp_team_icon, (772, 224), opp_team_icon)
 
         # 스코어
         player_team_score, opp_team_score = self.database.get_sets_score(match_id, player_team_name, opp_team_name)
-        self.add_text_box(background, f"{player_team_score} - {opp_team_score}", 451, 231, 96, (255, 255, 255), self.anton_font_path)
+        self.add_text_box(background, f"{player_team_score} - {opp_team_score}", 459, 224, 96, (255, 255, 255), self.anton_font_path)
 
         #이름 및 테이블
         overall_mvp_score = self.database.calculate_overall_mvp_score(game_df, match_id, player_name)
@@ -179,13 +190,13 @@ class MatchResult(BaseContentProcessor):
         blue_bbox = font.getbbox(win_team_name)
         blue_text_width = blue_bbox[2] - blue_bbox[0]
         blue_x = 300 - (blue_text_width / 2)
-        result_draw.text((blue_x, 20), win_team_name, font=font, fill='#AAA9B7')
+        result_draw.text((blue_x, 15), win_team_name, font=font, fill='#AAA9B7')
 
         red_team_name = opp_player_team['teamname'].iloc[0]
         red_bbox = font.getbbox(red_team_name)
         red_text_width = red_bbox[2] - red_bbox[0]
         red_x = 700 - (red_text_width / 2)
-        result_draw.text((red_x, 20), red_team_name, font=font, fill='#AAA9B7')
+        result_draw.text((red_x, 15), red_team_name, font=font, fill='#AAA9B7')
         background.paste(result_table, position, result_table)
     
     #왼쪽이 무조건 플레이어팀
@@ -274,7 +285,7 @@ class MatchResult(BaseContentProcessor):
                 except Exception as e:
                     print(f"레드팀 ban 이미지 처리 중 오류: {e}")
 
-    def run(self, match_id, player_name, article_type):
-        self.title_page(match_id, player_name, article_type)
+    def run(self, match_id, player_name, detection_type):
+        self.title_page(match_id, player_name, detection_type)
         last_page = self.set_page(match_id, player_name)
         self.main_page(match_id, player_name, last_page)
