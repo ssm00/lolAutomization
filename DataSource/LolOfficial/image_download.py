@@ -39,6 +39,8 @@ class ImageDownload:
             'referer': 'https://lolesports.com/',
             'x-api-key': '0TvQnueqKa5mxJntVWt0w4LpLfEkrV1Ta8rQBb9Z'
         }
+        self.lck_standing_url = "https://esports-api.lolesports.com/persisted/gw/getStandings?hl=ko-KR&tournamentId=113480665704729522"
+
 
     def champion_background(self, official_name, ps_name):
         official_name = official_name + "_0"
@@ -154,10 +156,6 @@ class ImageDownload:
             results[champion] = url
         return results
 
-    def get_all_groups(self):
-        url = "https://esports-api.lolesports.com/persisted/gw/getStandings?hl=ko-KR&tournamentId=113480665704729522"
-        url = ""
-        pass
 
     def download_team_icons(self, url):
         response = re.get(url, headers=self.lol_eSport_header)
@@ -227,3 +225,14 @@ class ImageDownload:
                 print(f"다운로드 실패: {team_name} - {e}")
 
         print(f"\n총 {downloaded_count}개 팀 아이콘 다운로드 완료.")
+
+
+    def get_all_groups(self):
+
+
+    # 1. 그룹 명 모두 가져오기
+    # 2. db에 없으면 팀 명, 팀 아이콘 저장
+    # 3. 팀원 이미지 수집
+    def run(self):
+        "https://esports-api.lolesports.com/persisted/gw/getStandings?hl=ko-KR&tournamentId=113684769985506946"
+
