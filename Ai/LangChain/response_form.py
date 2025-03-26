@@ -31,3 +31,12 @@ class InterviewResponse(BaseModel):
     summaries: List[InterviewSummary] = Field(
         description="인터뷰의 주요 부분들에 대한 요약 (3-6개 사이)"
     )
+
+class InterviewTitleResponse(BaseModel):
+    player_name: str = Field(description="플레이어명")
+    player_team: str = Field(description="플레이어팀")
+    opp_team: str = Field(description="상대팀")
+    date: str = Field(description="날짜")
+
+
+
