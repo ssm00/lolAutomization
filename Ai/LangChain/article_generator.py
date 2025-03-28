@@ -1,6 +1,7 @@
 from langchain_core.tracers import LangChainTracer
 from dotenv import load_dotenv
 import os
+import random
 from langchain_openai import ChatOpenAI
 from langchain_core.output_parsers.json import JsonOutputParser
 
@@ -29,7 +30,8 @@ class ArticleGenerator:
             'third_page': JsonOutputParser(pydantic_object=ThirdPageResponse),
             'fourth_page': JsonOutputParser(pydantic_object=FourthPageResponse),
             'fifth_page': JsonOutputParser(pydantic_object=FifthPageResponse),
-            'interview': JsonOutputParser(pydantic_object=InterviewResponse)
+            'interview': JsonOutputParser(pydantic_object=InterviewResponse),
+            'interview_title': JsonOutputParser(pydantic_object=InterviewTitleResponse)
         }
         self.first_page_template = PromptTemplate(
             input_variables=["player_name", "champion_name", "position", "team_name", "pick_rate", "kda", "max_chars"],
@@ -75,7 +77,15 @@ class ArticleGenerator:
                 "full_text"
             ],
             partial_variables={"format_instructions": self.parsers['interview'].get_format_instructions()},
-            template=self.prompt.get("interview").get("v1")
+            template=self.prompt.get("interview").get('default').get("v1")
+        )
+
+        self.interview_title_template = PromptTemplate(
+            input_variables=[
+                "title"
+            ],
+            partial_variables={"format_instructions": self.parsers['interview_title'].get_format_instructions()},
+            template=self.prompt.get("interview").get('default').get("title")
         )
 
         self.chains = {
@@ -84,7 +94,8 @@ class ArticleGenerator:
             'third_page': self.third_page_template | self.llm | self.parsers['third_page'],
             'fourth_page': self.fourth_page_template | self.llm | self.parsers['fourth_page'],
             'fifth_page': self.fifth_page_template | self.llm | self.parsers['fifth_page'],
-            'interview': self.interview_template | self.llm | self.parsers['interview']
+            'interview': self.interview_template | self.llm | self.parsers['interview'],
+            'interview_title': self.interview_title_template | self.llm | self.parsers['interview_title']
         }
 
     def generate_first_page_article(self, game_df, player_name, max_chars):
@@ -325,17 +336,83 @@ class ArticleGenerator:
                 ]
             }
             result = self.chains['fifth_page'].invoke(article_data)
-            print(result)
             return result
         except Exception as e:
             print(f"오류 발생 위치: {__file__}, 라인: {e.__traceback__.tb_lineno}")
             print(f"오류 내용: {str(e)}")
             return "기사 생성에 실패했습니다."
 
+    def generate_interview_summary(self, game_id, youtube_title, title_info, video_path):
+        try:
+            game_df = self.database.get_game_data(game_id)
+            player_name = title_info['player_name']
+            player_team = game_df[game_df['playername'] == player_name]['teamname'].iloc[0]
+            opp_team = game_df[game_df['teamname'] != player_team]['teamname'].iloc[0]
+            player_team_score, opp_team_score = self.database.get_sets_score(game_id, player_team, opp_team)
+            player_team_player_name = game_df[game_df['teamname'] == player_team]['playername'].tolist()
+            opp_team_player_name = game_df[game_df['teamname'] != player_team]['playername'].tolist()
+            interview_info = self.mongo.find_interview_by_video_path(video_path)
+            interview_data = {
+                "video_title": youtube_title,
+                "player_team": player_team,
+                "player_name": player_name,
+                "player_team_player_list": player_team_player_name,
+                "opp_team": opp_team,
+                "opp_team_player_list": opp_team_player_name,
+                "player_team_score": player_team_score,
+                "opp_team_score": opp_team_score,
+                "full_text": interview_info['full_text']
+            }
+            result = self.chains['interview'].invoke(interview_data)
+            return result
+        except Exception as e:
+            print(f"오류 발생 위치: {__file__}, 라인: {e.__traceback__.tb_lineno}")
+            print(f"오류 내용: {str(e)}")
+            return "인터뷰 서머리 실패."
 
-    def generate_interview_summary(self, document):
-        result = self.chains['interview'].invoke({"full_text":document['full_text']})
+    def generate_interview_title(self, title):
+        result = self.chains['interview_title'].invoke({"title":title})
         return result
+
+    #match_result detection_type -> general, penta_kill, unmatch_line, two_bottom_choice
+    def generate_match_result_title(self, detection_type, game_df, player_name):
+        base_prompt = self.prompt.get("match_result").get(detection_type)
+        position_kr_list = {'top': '탑', 'jungle': '정글', 'mid': '미드', 'bottom': '바텀', 'support': '서포터'}
+        if detection_type == "general":
+            prompt = random.choice(base_prompt)
+            return prompt.format(channel_name="DLK")
+        elif detection_type == "unmatch_line":
+            position = position_kr_list[game_df[game_df['playername'] == player_name]['position'].iloc[0]]
+            name_us = game_df[game_df['playername'] == player_name]['name_us'].iloc[0]
+            name_kr = self.database.get_name_kr(name_us)
+            format_data = {
+                'position': position,
+                'name_kr': name_kr,
+                'player_name': player_name
+            }
+            if position == "미드" or position == "정글":
+                without_final_consonant = base_prompt.get("without_final_consonant")
+                general = base_prompt.get("general")
+                prompt_list = without_final_consonant + general
+            else:
+                with_final_consonant = base_prompt.get("with_final_consonant")
+                general = base_prompt.get("general")
+                prompt_list = with_final_consonant + general
+            prompt = random.choice(prompt_list)
+            return prompt.format(**format_data)
+        elif detection_type == "penta_kill":
+            player_team = game_df[game_df['playername'] == player_name]['teamname'].iloc[0]
+            prompt = random.choice(base_prompt)
+            return prompt.format(player_team=player_team, player_name=player_name)
+        elif detection_type == "two_bottom_choice":
+            bottom_player = game_df[game_df['position'] == 'bottom']['name_us'].iloc[0]
+            unmatch_player = game_df[game_df['playername'] == player_name]['name_us'].iloc[0]
+            name_kr_1 = self.database.get_name_kr(bottom_player)
+            name_kr_2 = self.database.get_name_kr(unmatch_player)
+            prompt = random.choice(base_prompt)
+            return prompt.format(name_kr_1=name_kr_1, name_kr_2=name_kr_2)
+        return "오늘의 경기 결과"
+
 
     def calculate_kda(self, kill, death, assist):
         if death == 0:
