@@ -1,84 +1,113 @@
 import whisper
 import time
 import torch
-from Db import mongo_db
-from MyMetaData import metadata
-from text_refiner import TextRefiner
+from pydub import AudioSegment
+from openai import OpenAI
+import os
 
+class SpeechToText:
 
-def transcribe_video(video_path, model_size="medium", language="ko"):
-    try:
-        print(f"GPU 사용 가능 여부: {torch.cuda.is_available()}")
+    def __init__(self, mongo_db):
+        self.mongo_db = mongo_db
+        self.client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-        print(f"모델 로딩 중... ({model_size})")
-        start_time = time.time()
+    def extract_text_lck_interview_local(self, video_path, model_size="medium", language=None):
+        try:
+            print(f"GPU 사용 가능 여부: {torch.cuda.is_available()}")
+            print(f"모델 로딩 중... ({model_size})")
+            start_time = time.time()
+            model = whisper.load_model(model_size)
+            print(f"모델 로딩 완료! (소요시간: {time.time() - start_time:.1f}초)")
+            print("음성을 텍스트로 변환 중...")
+            start_time = time.time()
+            result = model.transcribe(
+                video_path,
+                language=language,
+                verbose=True,
+                initial_prompt="안녕하세요. 한국어 음성을 텍스트로 변환합니다."
+            )
 
-        model = whisper.load_model(model_size)
+            print(f"변환 완료! (소요시간: {time.time() - start_time:.1f}초)")
+            return self.mongo_db.save_interview_transcription(result, video_path)
+        except Exception as e:
+            print(f"에러 발생: {str(e)}")
+            return None
 
-        print(f"모델 로딩 완료! (소요시간: {time.time() - start_time:.1f}초)")
-        print("음성을 텍스트로 변환 중...")
+    # 4o 분당 0.006
+    # 4o-mini 0.003
+    # whisper 0.006
+    # aws 0.024
+    # universal-2 0.002
+    # 결과는 4o-mini가 whisper 보다 나아보임 근데 segment 표시 안됨
+    def extract_text_lck_interview(self, video_path, model="gpt-4o-mini-transcribe", language=None):
+        try:
+            print(f"API를 사용하여 음성을 텍스트로 변환 중... (모델: {model})")
+            start_time = time.time()
+            file_size_mb = os.path.getsize(video_path) / (1024 * 1024)
+            if file_size_mb > 25:
+                print(f"경고: 파일 크기가 {file_size_mb:.1f}MB로, 25MB 제한을 초과합니다.")
+                # self._split_large_audio(audio_path)
 
-        start_time = time.time()
-        result = model.transcribe(
-            video_path,
-            language=language,
-            verbose=True,
-            initial_prompt="안녕하세요. 한국어 음성을 텍스트로 변환합니다."
-        )
+            with open(video_path, "rb") as audio_file:
+                api_params = {
+                    "model": model,
+                    "file": audio_file,
+                }
+                if model == "whisper-1":
+                    api_params["response_format"] = "verbose_json"
+                else:
+                    api_params["response_format"] = "json"
+                if language:
+                    api_params["language"] = language
+                api_params["prompt"] = "안녕하세요. 한국어 음성을 텍스트로 변환합니다."
+                result = self.client.audio.transcriptions.create(**api_params)
 
-        print(f"변환 완료! (소요시간: {time.time() - start_time:.1f}초)")
-        print(result)
-        return result
+            print(f"변환 완료! (소요시간: {time.time() - start_time:.1f}초)")
+            if hasattr(result, 'model_dump'):
+                result_dict = result.model_dump()
+            elif hasattr(result, 'to_dict'):
+                result_dict = result.to_dict()
+            elif hasattr(result, '__dict__'):
+                result_dict = vars(result)
+            else:
+                # 이미 딕셔너리거나 JSON 문자열인 경우
+                if isinstance(result, dict):
+                    result_dict = result
+                elif isinstance(result, str):
+                    import json
+                    result_dict = json.loads(result)
+                else:
+                    # 기본 fallback - 문자열 속성 추출 시도
+                    result_dict = {"text": str(result)}
 
-    except Exception as e:
-        print(f"에러 발생: {str(e)}")
-        return None
+            if "segments" not in result_dict and model != "whisper-1":
+                result_dict["segments"] = []
+            self.mongo_db.save_interview_transcription(result_dict, video_path)
+        except Exception as e:
+            print(f"에러 발생: {str(e)}")
+            return None
 
+    # 필요시 대용량 오디오 파일 분할 메소드 추가
+    def _split_large_audio(self, audio_path, chunk_minutes=10):
+        try:
+            audio = AudioSegment.from_file(audio_path)
+            # PyDub는 밀리초 단위로 처리
+            chunk_length_ms = chunk_minutes * 60 * 1000
+            chunks = []
 
-def save_transcript(result, output_path, save_segments=True):
+            # 파일 이름과 확장자 분리
+            base_name = os.path.splitext(audio_path)[0]
+            extension = os.path.splitext(audio_path)[1]
 
-    try:
-        if result is None:
-            print("저장할 결과가 없습니다.")
-            return
+            # 청크로 분할
+            for i, chunk in enumerate(audio[::chunk_length_ms]):
+                chunk_name = f"{base_name}_chunk{i}{extension}"
+                chunk.export(chunk_name, format=extension.replace(".", ""))
+                chunks.append(chunk_name)
+                print(f"청크 생성: {chunk_name}")
 
-        # 전체 텍스트 저장
-        with open(output_path, 'w', encoding='utf-8') as f:
-            # 전체 텍스트
-            f.write("[전체 텍스트]\n")
-            f.write(result["text"])
-            f.write("\n\n")
+            return chunks
 
-            # 세그먼트 별 정보 저장
-            if save_segments:
-                f.write("[세그먼트 별 정보]\n")
-                for segment in result["segments"]:
-                    start_time = time.strftime('%H:%M:%S', time.gmtime(segment["start"]))
-                    end_time = time.strftime('%H:%M:%S', time.gmtime(segment["end"]))
-                    f.write(f"\n[{start_time} -> {end_time}]\n")
-                    f.write(f"{segment['text'].strip()}\n")
-
-        database.save_transcription(result, VIDEO_PATH)
-        print(f"결과가 {output_path}에 저장되었습니다.")
-
-    except Exception as e:
-        print(f"결과 저장 중 에러 발생: {str(e)}")
-
-
-if __name__ == "__main__":
-    # 설정
-    VIDEO_PATH = "../input.mp4"
-    OUTPUT_PATH = "output_whisper.txt"
-    MODEL_SIZE = "small"  # tiny, base, small, medium, large 중 선택
-    LANGUAGE = "ko"  # 한국어
-
-    meta = metadata.MetaData()
-    mongo_info = meta.db_info['mongo_local']
-    database = mongo_db.MongoDB(mongo_info)
-
-    document = database.find_by_video_path(VIDEO_PATH)
-
-    refiner = TextRefiner()
-    refined_result = refiner.refine_interview(document)
-    print(refined_result)
-
+        except Exception as e:
+            print(f"오디오 분할 중 오류 발생: {str(e)}")
+            return None
