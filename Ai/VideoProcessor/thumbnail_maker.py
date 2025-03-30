@@ -33,7 +33,7 @@ class ThumbnailSelector:
     def capture_random_frames(self, video_path, num_frames=5):
         try:
             cap = cv2.VideoCapture(video_path)
-            video_info = self.mongo_db.find_lcK_video_info_by_path(video_path)
+            video_info = self.mongo_db.find_lcK_video_by_video_path(video_path)
             video_id = video_info['_id']
             if not cap.isOpened():
                 print(f"비디오를 열 수 없습니다: {video_path}")
@@ -159,14 +159,14 @@ class ThumbnailSelector:
                           for criterion, weight in self.criteria.items())
         return final_score
 
-    def evaluate_thumbnail_vlm(self, frame_data, video_title):
+    def select_by_vlm(self, frame_data, video_info):
         best_thumbnail = None
         best_score = -1
         all_evaluations = []
 
         for i, frame_path in enumerate(frame_data["frame_paths"]):
             print(f"프레임 {i + 1}/{len(frame_data['frame_paths'])} 평가 중...")
-            criteria_scores = self.evaluate_image(frame_path, video_title)
+            criteria_scores = self.evaluate_image(frame_path, video_info['title'])
             if criteria_scores:
                 final_score = self.calculate_final_score(criteria_scores)
                 evaluation = {
@@ -178,8 +178,6 @@ class ThumbnailSelector:
                 all_evaluations.append(evaluation)
 
                 print(f"프레임 {i + 1} 평가 완료 - 점수: {final_score:.2f}")
-
-                # 최고 점수 업데이트
                 if final_score > best_score:
                     best_score = final_score
                     best_thumbnail = evaluation
@@ -187,7 +185,7 @@ class ThumbnailSelector:
         if best_thumbnail:
             print(f"최적의 썸네일 선택됨: {best_thumbnail['path']} (점수: {best_thumbnail['score']:.2f})")
             if "video_id" in frame_data:
-                self.mongo_db.save_thumbnail_selection(frame_data["video_id"], best_thumbnail)
+                self.mongo_db.save_thumbnail_selection(video_info['_id'], best_thumbnail)
         else:
             print("썸네일 선택에 실패했습니다.")
 
@@ -230,18 +228,8 @@ class ThumbnailSelector:
     def evaluate_clip(self, image_list):
         pass
 
-    def run(self, interview_document):
-        video_id = interview_document.get("video_id")
-        video_title = interview_document.get("title")
-        video_path = interview_document.get("download_path")
-        frame_data = self.capture_random_frames(video_path, num_frames=10)
-        frame_data["video_id"] = video_id
-        best_thumbnail = self.evaluate_thumbnail_vlm(frame_data, video_title)
-
-
-# 메인 실행 함수
-if __name__ == "__main__":
-    me = MyMetaData.metadata.MetaData()
-    mongo_db = MongoDB(me.db_info['mongo_local'])
-    thumbnail_selector = ThumbnailSelector(mongo_db)
+    def run_by_vlm(self, video_path):
+        video_info = self.mongo_db.find_lcK_video_by_video_path(video_path)
+        frame_data = self.capture_random_frames(video_path, num_frames=5)
+        return self.select_by_vlm(frame_data, video_info)
 
