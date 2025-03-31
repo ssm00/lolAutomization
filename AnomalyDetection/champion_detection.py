@@ -34,7 +34,6 @@ class ChampionDetection:
     def run_performance_score(self):
         self.update_performance_score()
         match_info = self.database.detect_by_performance_score(self.patch)
-        print(match_info)
 
     def run_unmatch_line(self):
         self.find_unmatch_line()
@@ -43,46 +42,23 @@ class ChampionDetection:
         bottom_champions = self.database.get_only_bottom_champion(self.patch)
         match_info = self.database.get_player_info(self.patch)
         multi_adc_games = []
-
-        for (game_id, side), team_picks in match_info.groupby(['gameid', 'side']):
-            adc_picks = [pick for pick in team_picks.itertuples()
-                         if pick.name_us in bottom_champions]
+        for (gameid, side), team_picks in match_info.groupby(['gameid', 'side']):
+            adc_picks = [pick for pick in team_picks.itertuples() if pick.name_us in bottom_champions]
+            unmatch_picks = [pick for pick in team_picks.itertuples()
+                             if pick.name_us in bottom_champions and pick.position != 'bottom']
 
             if len(adc_picks) >= 2:
                 game_info = {
-                    'game_id': game_id,
-                    'team_side': side,
-                    'team_name': adc_picks[0].teamname,
-                    'adc_picks': []
+                    'gameid': gameid,
+                    'team_name': unmatch_picks[0].teamname,
+                    'unmatch_player': unmatch_picks[0].playername
                 }
-
-                for pick in adc_picks:
-                    game_info['adc_picks'].append({
-                        'champion': pick.name_us,
-                        'position': pick.position,
-                        'player': pick.playername
-                    })
-
                 multi_adc_games.append(game_info)
-
-        if multi_adc_games:
-            print("\n원거리 딜러 다중 픽 게임 분석:")
-            print("=" * 60)
-            for game in multi_adc_games:
-                print(f"게임 ID: {game['game_id']}")
-                print(f"팀 사이드: {game['team_side']}")
-                print(f"팀 이름: {game['team_name']}")
-                print("\n원거리 딜러 픽:")
-                for pick in game['adc_picks']:
-                    print(f"- {pick['champion']} ({pick['position']} 포지션, 플레이어: {pick['player']})")
-                print("----------------------------------------------")
-        else:
-            print("원거리 딜러를 2개 이상 픽한 게임이 없습니다.")
+        return multi_adc_games
 
     def run_penta_kill(self):
-        id_list = self.database.get_penta_kill_game_id(self.patch)
-        return id_list
-
+        penta_kill_list = self.database.get_penta_kill_game_id(self.patch)
+        return penta_kill_list
 
     def run_pick_rate(self):
         """
@@ -136,10 +112,11 @@ class ChampionDetection:
                 print("-" * 50)
         else:
             print("모든 챔피언 선택이 일반적입니다.")
+        return unusual_picks
 
     # 모든 매치 데이터에서 IF
     def run_match_info(self):
-        match_df = self.database.get_team_info()
+        match_df = self.database.get_oracle_elixirs_all_team_info()
         features = ['gamelength','result','kills','deaths','assists','team_kpm','ckpm','damagetochampions','dpm','damagetakenperminute','visionscore','totalgold','earned_gpm','gspd']
         x = match_df[features].copy()
         scaler = MinMaxScaler()
