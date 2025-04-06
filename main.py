@@ -75,7 +75,7 @@ class Main:
             self.match_result.run(penta_kill['gameid'], penta_kill['playername'], "penta_kill")
 
     def run_update_team_icon(self):
-        self.pick_rate.run("","","")
+        self.image_download.run_team()
 
     def run_interview(self):
         self.interview.run()
