@@ -1,12 +1,13 @@
 import os
 import sys
-
+import re as regex
 import numpy as np
 import pymysql
 import pandas as pd
-from datetime import datetime
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(os.path.dirname(__file__)))))
+from datetime import datetime, date
+from fuzzywuzzy import fuzz
 
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(os.path.dirname(__file__)))))
 
 class Database:
     def __init__(self, db_info, meta_data, logger):
@@ -100,6 +101,7 @@ class Database:
             return result['url_number']
         return None
 
+    # 공식 사이트 패치 정보 데이터 소스 url 업데이트
     def update_patch_url_number(self):
         latest_patch_version = self.get_latest_patch_oracle_elixirs()
         #이미 최신이라 업데이트 안해도 되면 그냥 반환
@@ -267,7 +269,7 @@ class Database:
             position_champions[position] = pd.read_sql(query, self.connection)['name_us'].tolist()
         return position_champions
 
-    def get_player_info(self, patch):
+    def get_all_data_without_team(self, patch, game_date=None):
         select_query = f"""
         SELECT *
         FROM oracle_elixir_{self.year} 
@@ -275,10 +277,12 @@ class Database:
         AND patch = {patch}
         ORDER BY gameid, side
         """
+        if game_date is None:
+            select_query += " AND DATE(game_date) = CURDATE()"
         match_info = pd.read_sql(select_query, self.connection)
         return match_info
 
-    def get_team_info(self):
+    def get_oracle_elixirs_all_team_info(self):
         select_query = f"""
         select * 
         from oracle_elixir_{self.year}
@@ -318,10 +322,12 @@ class Database:
         """
         return pd.read_sql(select_query, self.connection)['name_us'].tolist()
 
-    def get_penta_kill_game_id(self, patch):
+    def get_penta_kill_game_id(self, patch, game_date=None):
         select_query = f"""select playername, gameid from oracle_elixir_{self.year} where pentakills >= 1 and patch = %s and playername is not null"""
-        id_list = self.fetch_all(select_query, patch)
-        return id_list
+        penta_kill_list = self.fetch_all(select_query, patch)
+        if game_date is None:
+            select_query += " AND DATE(game_date) = CURDATE()"
+        return penta_kill_list
 
     def get_match_series_info(self, game_id, player_name):
         select_query = f"""
@@ -577,7 +583,7 @@ class Database:
         }
         return formatted_data
 
-    def get_radar_stats(self, game_id, player_name):
+    def get_radar_stats_backup(self, game_id, player_name):
         game_df = self.get_game_data(game_id)
         player_df = game_df[game_df["playername"] == player_name].iloc[0]
         opp_player_df = game_df[(game_df["position"] == player_df['position']) & (game_df['side'] != player_df['side'])].iloc[0]
@@ -636,6 +642,132 @@ class Database:
                 'opponent': [opp_player_df[stat] for stat in base_stats] + [opp_player_df['visionscore'], opp_laning]
             }
         max_values = [max(stats_values['player'][i], stats_values['opponent'][i]) for i in range(len(stats))]
+        normalized_values = {
+            'player': [val / max_val * 0.7 if max_val != 0 else 0 for val, max_val in
+                       zip(stats_values['player'], max_values)],
+            'opponent': [val / max_val * 0.7 if max_val != 0 else 0 for val, max_val in
+                         zip(stats_values['opponent'], max_values)]
+        }
+
+        return {
+            'game_id': game_id,
+            'position': position,
+            'stats': stats,
+            'label_mapping': label_mapping,
+            'stats_values': stats_values,
+            'normalized_values': normalized_values,
+            'player_names': {
+                'player': f"{player_df['playername']}({player_name_kr})",
+                'opponent': f"{opp_player_df['playername']}({opp_player_name_kr})"
+            }
+        }
+
+    def get_radar_stats(self, game_id, player_name):
+        game_df = self.get_game_data(game_id)
+        player_df = game_df[game_df["playername"] == player_name].iloc[0]
+        opp_player_df = game_df[(game_df["position"] == player_df['position']) & (game_df['side'] != player_df['side'])].iloc[0]
+        player_name_kr = self.get_name_kr(player_df['name_us'])
+        opp_player_name_kr = self.get_name_kr(opp_player_df['name_us'])
+
+        base_stats = ['kills', 'deaths', 'assists', 'damagetochampions', 'damagetakenperminute']
+        label_mapping = {
+            'kills': '킬',
+            'deaths': '데스',
+            'assists': '어시스트',
+            'damagetochampions': '가한 피해량',
+            'damagetakenperminute': '분당 받은 피해량',
+            'totalgold': '골드 획득',
+            'laning_score': '라인전 점수',
+            'visionscore': '시야 점수',
+            'dragons': '드래곤',
+            'barons': '바론'
+        }
+
+        # 시그모이드 함수를 사용한 레이닝 점수 계산 함수
+        def calculate_sigmoid_laning_score(player_stats, opp_stats):
+            # 골드, 경험치, CS 차이 구하기
+            gold_diff = player_stats['golddiffat15'] - opp_stats['golddiffat15']
+            xp_diff = player_stats['xpdiffat15'] - opp_stats['xpdiffat15']
+            cs_diff = player_stats['csdiffat15'] - opp_stats['csdiffat15']
+
+            # 시그모이드 함수를 사용한 점수 계산
+            # 골드 차이 - 더 민감하게 반응하도록 k값 조정
+            k_gold = 0.002  # 1500 골드 차이에서 약 85% 수준으로 포화되도록 설정
+            norm_gold = 1 / (1 + np.exp(-k_gold * gold_diff))
+
+            # 경험치 차이
+            k_xp = 0.003  # 1000 XP 차이에서 약 85% 수준으로 포화되도록 설정
+            norm_xp = 1 / (1 + np.exp(-k_xp * xp_diff))
+
+            # CS 차이
+            k_cs = 0.1  # 30 CS 차이에서 약 85% 수준으로 포화되도록 설정
+            norm_cs = 1 / (1 + np.exp(-k_cs * cs_diff))
+
+            # 포지션별 맞춤형 가중치 적용
+            position = player_stats['position']
+
+            if position == 'top':
+                weights = {'gold': 0.3, 'xp': 0.3, 'cs': 0.4}  # 탑은 CS와 경험치가 중요
+            elif position == 'mid':
+                weights = {'gold': 0.4, 'xp': 0.3, 'cs': 0.3}  # 미드는 골드와 로밍 영향력이 중요
+            elif position == 'bottom':
+                weights = {'gold': 0.5, 'xp': 0.2, 'cs': 0.3}  # 원딜은 골드가 가장 중요
+            elif position == 'jungle':
+                weights = {'gold': 0.4, 'xp': 0.4, 'cs': 0.2}  # 정글은 골드와 경험치가 중요
+            else:  # support
+                weights = {'gold': 0.3, 'xp': 0.5, 'cs': 0.2}  # 서포터는 경험치와 로밍이 중요
+
+            # 가중 평균 계산
+            laning_score_normalized = (
+                    norm_gold * weights['gold'] +
+                    norm_xp * weights['xp'] +
+                    norm_cs * weights['cs']
+            )
+
+            # 0~10 범위로 변환
+            laning_score = laning_score_normalized * 10
+
+            # 소수점 첫째 자리에서 반올림
+            return round(laning_score, 1)
+
+        position = player_df['position']
+        if position in ['mid', 'top', 'bottom']:
+            # 양 선수의 레이닝 점수를 각각 계산
+            player_laning = calculate_sigmoid_laning_score(player_df, opp_player_df)
+            opp_laning = calculate_sigmoid_laning_score(opp_player_df, player_df)
+
+            stats = base_stats + ['totalgold', 'laning_score']
+            stats_values = {
+                'player': [player_df[stat] for stat in base_stats] + [player_df['totalgold'], player_laning],
+                'opponent': [opp_player_df[stat] for stat in base_stats] + [opp_player_df['totalgold'], opp_laning]
+            }
+
+        elif position == 'jungle':
+            player_team = game_df[(game_df['position'] == "team") & (game_df['side'] == player_df['side'])].iloc[0]
+            opp_team = game_df[(game_df['position'] == "team") & (game_df['side'] == opp_player_df['side'])].iloc[0]
+
+            stats = base_stats + ['dragons', 'barons']
+            stats_values = {
+                'player': [player_df[stat] for stat in base_stats] + [int(player_team['dragons']),
+                                                                      int(player_team['barons'])],
+                'opponent': [opp_player_df[stat] for stat in base_stats] + [int(opp_team['dragons']),
+                                                                            int(opp_team['barons'])]
+            }
+
+        else:  # support
+            # 서포터도 동일한 방식으로 각각 계산
+            player_laning = calculate_sigmoid_laning_score(player_df, opp_player_df)
+            opp_laning = calculate_sigmoid_laning_score(opp_player_df, player_df)
+
+            stats = base_stats + ['visionscore', 'laning_score']
+            stats_values = {
+                'player': [player_df[stat] for stat in base_stats] + [player_df['visionscore'], player_laning],
+                'opponent': [opp_player_df[stat] for stat in base_stats] + [opp_player_df['visionscore'], opp_laning]
+            }
+
+        # 레이더 차트를 위한 정규화 (데스는 낮을수록 좋으므로 특별 처리)
+        max_values = [max(stats_values['player'][i], stats_values['opponent'][i]) if stats[i] != 'deaths' else min(
+            stats_values['player'][i], stats_values['opponent'][i]) for i in range(len(stats))]
         normalized_values = {
             'player': [val / max_val * 0.7 if max_val != 0 else 0 for val, max_val in
                        zip(stats_values['player'], max_values)],
@@ -783,17 +915,14 @@ class Database:
                            ) * weights['laning']
 
             team_row = team_data[team_data['result'] == player['result']].iloc[0]
-            objective_participation = 0
 
             max_dragons = 4
-            max_barons = 2
+            max_barons = 3
             max_towers = 11
-            max_heralds = 2
-            tower_score = min(team_row['towers'] / max_towers, 1.0) * 0.25
-            dragon_score = min(team_row['dragons'] / max_dragons, 1.0) * 0.35
-            baron_score = min(team_row['barons'] / max_barons, 1.0) * 0.25
-            herald_score = min(team_row['heralds'] / max_heralds, 1.0) * 0.15
-            objective_participation = tower_score + dragon_score + baron_score + herald_score
+            tower_score = min(team_row['towers'] / max_towers, 1.0) * 0.20
+            dragon_score = min(team_row['dragons'] / max_dragons, 1.0) * 0.40
+            baron_score = min(team_row['barons'] / max_barons, 1.0) * 0.40
+            objective_participation = tower_score + dragon_score + baron_score
             objective_score = objective_participation * weights['objective']
             score_breakdown = {
                 'combat': combat_score,
@@ -847,9 +976,7 @@ class Database:
         league = base_info.get('league')
         info_query = f"""select gameid, game from oracle_elixir_{self.year} where league = %s and (teamname = %s or teamname = %s) and position = 'team' and game_date between Date(%s) and Date_Add(Date(%s), interval 1 Day)"""
         info = pd.read_sql(info_query, self.connection, params=(league, blue_team_name, red_team_name, game_date, game_date))
-        print(info)
-        result = info.sort_values('game').groupby('gameid').first().reset_index()
-        print(result)
+        result = info.sort_values('game').groupby('gameid', sort=False).first().reset_index()
         return result
  
     def get_league_title(self, game_id):
@@ -885,3 +1012,216 @@ class Database:
         }).reset_index()
         overall_mvp = overall_mvp.sort_values('mvp_score', ascending=False)
         return overall_mvp
+
+    def save_league_info(self, save_dir, leagues):
+        insert_query = """
+        INSERT INTO league_info (
+            official_site_name,
+            official_site_slug,
+            official_site_id,
+            region,
+            image_path
+        ) VALUES (%s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE 
+            official_site_name = VALUES(official_site_name),
+            official_site_id = VALUES(official_site_id),
+            region = VALUES(region),
+            image_path = VALUES(image_path)
+        """
+        params = []
+        for league in leagues:
+            league_id = league.get('id', '')
+            league_slug = league.get('slug', '')
+            league_name = league.get('name', '')
+            league_region = league.get('region', '')
+
+            local_image_path = f"{save_dir}/{league_slug}.png"
+
+            params.append((
+                league_name,
+                league_slug,
+                league_id,
+                league_region,
+                local_image_path
+            ))
+        for param in params:
+            self.cursor.execute(insert_query, param)
+        self.connection.commit()
+
+    def get_league_id(self):
+        select_query = "select * from league_info"
+        return self.fetch_all(select_query)
+
+    def save_tournament_info(self, tournament, league_seq):
+        tournament_id = tournament.get('id', '')
+        tournament_slug = tournament.get('slug', '')
+        start_date = tournament.get('startDate', '')
+        query = "SELECT COUNT(*) as count FROM tournament_info WHERE official_site_id = %s"
+        result = self.fetch_all(query, (tournament_id,))
+        exists = result[0]['count'] > 0 if result else False
+        if exists:
+            update_query = """
+            UPDATE tournament_info 
+            SET official_site_slug = %s, start_date = %s
+            WHERE official_site_id = %s
+            """
+            self.cursor.execute(update_query, (tournament_slug, start_date, tournament_id))
+        else:
+            insert_query = """
+            INSERT INTO tournament_info 
+            (official_site_id, official_site_slug, league_seq, start_date) 
+            VALUES (%s, %s, %s, %s)
+            """
+            self.cursor.execute(insert_query, (tournament_id, tournament_slug, league_seq, start_date))
+        self.commit()
+
+    def save_team_info(self, team, local_image_path, league_seq):
+        team_id = team.get('id', '')
+        team_name = team.get('name', '')
+        team_slug = team.get('slug', '')
+        team_code = team.get('code', '')
+        team_image = local_image_path if local_image_path else team.get('image', '')
+        record = team.get('record', {})
+        if record is None:
+            record = {}
+        wins = record.get('wins', 0)
+        losses = record.get('losses', 0)
+        ties = record.get('ties', 0)
+        query = """
+        INSERT INTO team_info (
+            official_site_id,
+            official_site_name,
+            official_site_slug,
+            official_site_code,
+            wins,
+            losses,
+            ties,
+            image_path,
+            league_seq
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+            official_site_id = VALUES(official_site_id),
+            official_site_name = VALUES(official_site_name),
+            official_site_code = VALUES(official_site_code),
+            wins = VALUES(wins),
+            losses = VALUES(losses),
+            ties = VALUES(ties),
+            image_path = VALUES(image_path),
+            league_seq = VALUES(league_seq)
+        """
+        self.cursor.execute(query, (team_id, team_name, team_slug, team_code, wins, losses, ties, team_image, league_seq))
+        self.commit()
+
+    def clean_team_name(self, name):
+        """팀 이름 정규화: 특수문자 제거, 소문자 변환, 공백 제거"""
+        if name is None:
+            return ""
+        name = regex.sub(r'\b(Team|Gaming|Esports|E-Sports|eSports|-)\b', '', name, flags=regex.IGNORECASE)
+        name = regex.sub(r'[^\w\s]', '', name)
+        return name.lower().strip()
+
+    def find_best_match(self, team_name, candidate_list, threshold=70):
+        best_score = 0
+        best_match = None
+
+        clean_name = self.clean_team_name(team_name)
+
+        for candidate in candidate_list:
+            clean_candidate = self.clean_team_name(candidate)
+
+            # 정확히 일치하는 경우
+            if clean_name == clean_candidate:
+                return candidate, 100
+
+            # 단어 토큰 기반 비교
+            token_score = fuzz.token_sort_ratio(clean_name, clean_candidate)
+            # 부분 문자열 비교
+            partial_score = fuzz.partial_ratio(clean_name, clean_candidate)
+            # 평균 점수 계산
+            score = (token_score + partial_score) / 2
+
+            if score > best_score:
+                best_score = score
+                best_match = candidate
+
+        if best_score >= threshold:
+            return best_match, best_score
+        else:
+            return None, best_score
+
+    def match_team_name(self):
+        oracle_teams_data = self.fetch_all("SELECT DISTINCT teamname FROM oracle_elixir_2024")
+        oracle_teams = [row['teamname'] for row in oracle_teams_data]
+
+        if not oracle_teams:
+            self.logger.warning("oracle_elixir_2025 테이블에서 팀 이름을 찾을 수 없습니다.")
+            return
+        team_info_records = self.fetch_all("SELECT seq, official_site_name, official_site_slug FROM team_info")
+
+        if not team_info_records:
+            self.logger.warning("team_info 테이블에서 팀 정보를 찾을 수 없습니다.")
+            return
+
+        mapping_results = []
+        update_count = 0
+
+        for team in team_info_records:
+            team_seq = team['seq']
+            team_name = team['official_site_name']
+            slug = team['official_site_slug']
+            best_match, score = self.find_best_match(team_name, oracle_teams)
+            if best_match is None:
+                best_match, score = self.find_best_match(team_name, slug)
+
+            mapping_results.append({
+                'team_seq': team_seq,
+                'official_site_name': team_name,
+                'oracle_elixir_team_name': best_match,
+                'match_score': score
+            })
+
+            if best_match is not None:
+                update_query = """
+                        UPDATE team_info 
+                        SET oracle_elixir_team_name = %s 
+                        WHERE seq = %s
+                        """
+                self.cursor.execute(update_query, (best_match, team_seq))
+                update_count += 1
+        self.connection.commit()
+        print(f"총 {len(team_info_records)}개 팀 중 {update_count}개 팀 매칭 완료")
+        unmatched = [result for result in mapping_results if result['oracle_elixir_team_name'] is None]
+        if unmatched:
+            print(f"{len(unmatched)}개 팀이 매칭되지 않았습니다.")
+            for team in unmatched:
+                print(f"매칭 실패: {team['official_site_name']} (ID: {team['team_seq']})")
+
+        return mapping_results
+
+    def get_all_team_slug(self):
+        select_query = "select official_site_slug from team_info"
+        return self.fetch_all(select_query)
+
+    def get_team_icon_name_by_oracle_elixir(self, oracle_elixir_team_name):
+        select_query = "select official_site_slug from team_info where oracle_elixir_team_name = (%s)"
+        result = self.fetch_one(select_query, oracle_elixir_team_name)
+        if result is not None:
+            return result.get("official_site_slug")
+        else:
+            print(f"팀 아이콘 정보 없음 : {oracle_elixir_team_name}")
+
+    def find_game_id_by_title_info(self, title_info):
+        player_name = title_info.get("player_name")
+        player_team_code = title_info.get("player_team")
+        opp_team_code = title_info.get("opp_team")
+        date_info = title_info.get("date")
+        select_team_name = "select oracle_elixir_team_name from team_info where official_site_code = %s"
+        team_result = self.fetch_one(select_team_name, player_team_code)
+        if team_result is None:
+            return None
+        player_team = team_result.get("oracle_elixir_team_name")
+        select_query = f"""select gameid from oracle_elixir_{self.year} where playername = %s and teamname = %s and DATE_FORMAT(game_date, "%%Y-%%m-%%d") = %s order by game_date desc"""
+        find_game = self.fetch_one(select_query, (player_name, player_team, date_info))
+        if find_game is None:
+            return None
+        return find_game.get("gameid")
