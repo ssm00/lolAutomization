@@ -28,7 +28,8 @@ class BaseContentProcessor(ABC):
         base_path = Path(__file__).parent.parent / "Assets" / "Font"
         self.cafe24_font_path = base_path / "Cafe24Ohsquare-v2.0" / "Cafe24Ohsquare-v2.0.ttf"
         self.noto_font_bold_path = base_path / "Noto_Sans_KR" / "static" / "NotoSansKR-Bold.ttf"
-        self.noto_font_regular_path = base_path / "Noto_Sans_KR" / "NotoSansKR-VariableFont_wght.ttf"
+        self.noto_font_light_path = base_path / "Noto_Sans_KR" / "NotoSansKR-VariableFont_wght.ttf"
+        self.noto_font_regular_path = base_path / "Noto_Sans_KR" / "static" / "NotoSansKR-Regular.ttf"
         self.anton_font_path = base_path / "Anton,Noto_Sans_KR" / "Anton" / "Anton-Regular.ttf"
         self.main_font_size = self.properties.get("main_font_size")
         self.main_line_spacing = self.properties.get("main_line_spacing")
@@ -144,7 +145,8 @@ class BaseContentProcessor(ABC):
             if y > position[1] + box_height:
                 break
         return image
-
+    
+    #그림자 있는 큰 제목 -> 기획 변경으로 안쓸듯
     def add_sub_title_text(self, image, text, x=50, y=50):
         draw = ImageDraw.Draw(image)
         font = ImageFont.truetype(self.cafe24_font_path, self.title_font_size)
@@ -162,7 +164,8 @@ class BaseContentProcessor(ABC):
                               text, font=font, fill='black')
         draw.text((x, y), text, font=font, fill='white')
 
-    def add_first_page_title(self, image, text, x=120, y=990, box_width=890, box_height=150):
+    # ^^ 사이 red, 글자수 조정
+    def add_first_page_title(self, image, text, x=120, y=990, box_width=860, box_height=150):
         min_font_size = 50
         current_font_size = self.title_font_size
         draw = ImageDraw.Draw(image)
@@ -357,14 +360,14 @@ class BaseContentProcessor(ABC):
         return image.resize((width, height), Image.Resampling.LANCZOS)
 
     def get_player_image_path(self, player_name):
+        player_name = player_name.lower()
         player_files = list(self.player_dir.glob('*.png'))
         file_mapping = {
             path.stem.lower(): path
             for path in player_files
         }
-        player_name_lower = player_name.lower()
-        if player_name_lower in file_mapping:
-            return file_mapping[player_name_lower]
+        if player_name in file_mapping:
+            return file_mapping[player_name]
         return self.player_dir / "default.png"
 
     def add_icon_to_image(self, image, icon_path, position):
