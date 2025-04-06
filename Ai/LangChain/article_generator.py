@@ -346,18 +346,18 @@ class ArticleGenerator:
         try:
             game_df = self.database.get_game_data(game_id)
             player_name = title_info['player_name']
-            player_team = game_df[game_df['playername'] == player_name]['teamname'].iloc[0]
-            opp_team = game_df[game_df['teamname'] != player_team]['teamname'].iloc[0]
+            player_team = title_info['player_team']
+            opp_team = title_info['opp_team']
             player_team_score, opp_team_score = self.database.get_sets_score(game_id, player_team, opp_team)
             player_team_player_name = game_df[game_df['teamname'] == player_team]['playername'].tolist()
             opp_team_player_name = game_df[game_df['teamname'] != player_team]['playername'].tolist()
             interview_info = self.mongo.find_interview_by_video_path(video_path)
             interview_data = {
                 "video_title": youtube_title,
-                "player_team": player_team,
+                "player_team_code": player_team,
                 "player_name": player_name,
                 "player_team_player_list": player_team_player_name,
-                "opp_team": opp_team,
+                "opp_team_code": opp_team,
                 "opp_team_player_list": opp_team_player_name,
                 "player_team_score": player_team_score,
                 "opp_team_score": opp_team_score,
