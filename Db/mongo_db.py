@@ -14,11 +14,13 @@ class MongoDB:
 
     def connect_mongodb(self):
         try:
-            escaped_username = quote_plus(self.db_info['id'])
-            escaped_password = quote_plus(self.db_info['password'])
-
-            uri = f"mongodb://{escaped_username}:{escaped_password}@{self.db_info['uri']}:{self.db_info['port']}/{self.db_info['db']}?authSource={self.db_info['auth_db']}"
-            self.client = MongoClient(uri)
+            if self.db_info['type'] == "mongo_atlas":
+                self.client = MongoClient(self.db_info["uri"])
+            else:
+                escaped_username = quote_plus(self.db_info['id'])
+                escaped_password = quote_plus(self.db_info['password'])
+                uri = f"mongodb://{escaped_username}:{escaped_password}@{self.db_info['uri']}:{self.db_info['port']}/{self.db_info['db']}?authSource={self.db_info['auth_db']}"
+                self.client = MongoClient(uri)
             self.db = self.client[self.db_info['db']]
             self.client.server_info()
 
