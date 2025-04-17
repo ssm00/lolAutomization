@@ -22,25 +22,24 @@ class ChampionDetection:
         self.basic_info = meta_data.basic_info
         self.output_dir = Path(__file__).parent.parent / 'PltOutput'
         self.output_dir.mkdir(exist_ok=True, parents=True)
-        self.patch = self.set_patch_version(self.basic_info)
+        self.patch = self.set_patch_version()
         self.line_list = ["top","mid","jungle","bottom","support"]
 
-    def set_patch_version(self, basic_info):
-        if basic_info['patch'] == "latest":
-            return self.database.get_latest_patch_oracle_elixirs()
+    def set_patch_version(self):
+        if self.basic_info['patch'] == "latest":
+            patch = self.database.get_latest_patch_oracle_elixirs()
+            print(f"패치 버전 세팅 {patch}")
+            return patch
         else:
-            return basic_info['patch']
+            return self.basic_info['patch']
 
     def run_performance_score(self):
         self.update_performance_score()
         match_info = self.database.detect_by_performance_score(self.patch)
 
-    def run_unmatch_line(self):
-        self.find_unmatch_line()
-
-    def run_two_bottom_choice(self):
+    def run_two_bottom_choice(self, game_date=None):
         bottom_champions = self.database.get_only_bottom_champion(self.patch)
-        match_info = self.database.get_player_info(self.patch)
+        match_info = self.database.get_all_data_without_team(self.patch, game_date)
         multi_adc_games = []
         for (gameid, side), team_picks in match_info.groupby(['gameid', 'side']):
             adc_picks = [pick for pick in team_picks.itertuples() if pick.name_us in bottom_champions]
@@ -51,21 +50,21 @@ class ChampionDetection:
                 game_info = {
                     'gameid': gameid,
                     'team_name': unmatch_picks[0].teamname,
-                    'unmatch_player': unmatch_picks[0].playername
+                    'playername': unmatch_picks[0].playername
                 }
                 multi_adc_games.append(game_info)
         return multi_adc_games
 
-    def run_penta_kill(self):
-        penta_kill_list = self.database.get_penta_kill_game_id(self.patch)
+    def run_penta_kill(self, game_date=None):
+        penta_kill_list = self.database.get_penta_kill_game_id(self.patch, game_date)
         return penta_kill_list
 
-    def run_pick_rate(self):
+    def run_pick_rate(self, game_date=None):
         """
         픽률이 하위 10프로인 챔피언을 픽한 경우 -> 이긴경우
         """
         position_champions = self.database.get_all_position_pick_rate(self.patch)
-        match_info = self.database.get_player_info(self.patch)
+        match_info = self.database.get_all_data_without_team(self.patch, game_date)
         unusual_picks = []
         for index, row in match_info.iterrows():
             position = row['position'].lower()
@@ -83,7 +82,7 @@ class ChampionDetection:
                 'league': row['league'],
                 'set': row['game'],
                 'result': row['result'],
-                'player': row['playername'],
+                'playername': row['playername'],
                 'team': row['teamname'],
                 'position': position,
                 'name_us': name_us,
@@ -97,21 +96,21 @@ class ChampionDetection:
             # 문제가 있는 경우에만 결과 리스트에 추가
             if pick_info['issue_type']:
                 unusual_picks.append(pick_info)
-        if unusual_picks:
-            print("\n비정상적인 챔피언 선택 분석:")
-            print("=" * 50)
-            for pick in unusual_picks:
-                print(f"게임 ID: {pick['gameid']}")
-                print(f"리그: {pick['league']}")
-                print(f"세트: {pick['set']}")
-                print(f"결과: {pick['result']}")
-                print(f"플레이어: {pick['player']} ({pick['team']})")
-                print(f"포지션: {pick['position']}")
-                print(f"선택한 챔피언: {pick['name_us']}")
-                print(f"특이사항: {', '.join(pick['issue_type'])}")
-                print("-" * 50)
-        else:
-            print("모든 챔피언 선택이 일반적입니다.")
+        # if unusual_picks:
+        #     print("\n비정상적인 챔피언 선택 분석:")
+        #     print("=" * 50)
+        #     for pick in unusual_picks:
+        #         print(f"게임 ID: {pick['gameid']}")
+        #         print(f"리그: {pick['league']}")
+        #         print(f"세트: {pick['set']}")
+        #         print(f"결과: {pick['result']}")
+        #         print(f"플레이어: {pick['player']} ({pick['team']})")
+        #         print(f"포지션: {pick['position']}")
+        #         print(f"선택한 챔피언: {pick['name_us']}")
+        #         print(f"특이사항: {', '.join(pick['issue_type'])}")
+        #         print("-" * 50)
+        # else:
+        #     print("모든 챔피언 선택이 일반적입니다.")
         return unusual_picks
 
     # 모든 매치 데이터에서 IF
@@ -216,10 +215,9 @@ class ChampionDetection:
                     facecolor='white')
         plt.close()
 
-    def find_unmatch_line(self):
+    def run_unmatch_line(self, game_date=None):
         champion_dict_by_line = self.database.get_all_champion_list(self.patch)
-        match_info = self.database.get_player_info(self.patch)
-
+        match_info = self.database.get_all_data_without_team(self.patch, game_date)
         off_position_picks = []
         for index, row in match_info.iterrows():
             line = row['position'].lower()
@@ -227,19 +225,9 @@ class ChampionDetection:
             if name_us not in champion_dict_by_line[line]:
                 off_position_picks.append({
                     'gameid': row['gameid'],
-                    'player': row['playername'],
+                    'playername': row['playername'],
                     'team': row['teamname'],
                     'line': line,
                     'name_us': name_us
                 })
-
-        if off_position_picks:
-            print("비정상적인 포지션 픽:")
-            for pick in off_position_picks:
-                print(f"게임 ID: {pick['gameid']}")
-                print(f"플레이어: {pick['player']} ({pick['team']})")
-                print(f"포지션: {pick['line']}")
-                print(f"선택한 챔피언: {pick['name_us']}")
-                print("---")
-        else:
-            print("모든 챔피언이 정상적인 포지션에서 선택되었습니다.")
+        return off_position_picks
