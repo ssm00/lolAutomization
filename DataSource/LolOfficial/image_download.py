@@ -1,6 +1,6 @@
 from datetime import datetime
 from urllib.parse import urlparse
-
+import concurrent.futures
 import requests as re
 import re as regex
 from pathlib import Path
@@ -8,6 +8,9 @@ from PIL import Image
 import io
 from bs4 import BeautifulSoup
 import os
+
+from tqdm import tqdm
+
 
 class ImageDownload:
 
@@ -256,11 +259,10 @@ class ImageDownload:
                 print(f"총 {len(teams)}개 팀 정보 처리 완료")
 
     def run_player(self):
-        slug_list = self.database.get_team_slug()
-        for slug_info in slug_list:
-            team_slug = slug_info.get('official_site_slug')
-            self.download_player_image_by_team(team_slug)
-
+        slug_list = self.database.get_all_team_slug()
+        team_slugs = [slug_info.get('official_site_slug') for slug_info in slug_list if slug_info.get('official_site_slug')]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            results = list(tqdm(executor.map(self.download_player_image_by_team, team_slugs), total=len(team_slugs)))
 
     # 1. 그룹 명 모두 가져오기
     # 2. db에 없으면 팀 명, 팀 아이콘 저장
