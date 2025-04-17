@@ -79,6 +79,8 @@ class Database:
     def get_last_date_from_db(self):
         query = f"SELECT MAX(game_date) FROM oracle_elixir_{self.year}"
         result = self.fetch_one(query)['MAX(game_date)']
+        if result is None:
+            return pd.to_datetime(f'{self.year}-01-01')
         return result
 
     def get_latest_patch_and_url_number(self):
@@ -274,11 +276,11 @@ class Database:
         SELECT *
         FROM oracle_elixir_{self.year} 
         WHERE position != 'team'
-        AND patch = {patch}
-        ORDER BY gameid, side
+        AND result = 1
         """
         if game_date is None:
-            select_query += " AND DATE(game_date) = CURDATE()"
+            select_query += " AND DATE(game_date) = (CURDATE() - 1)"
+        select_query += "ORDER BY gameid, side"
         match_info = pd.read_sql(select_query, self.connection)
         return match_info
 
@@ -1113,32 +1115,38 @@ class Database:
         self.commit()
 
     def clean_team_name(self, name):
-        """팀 이름 정규화: 특수문자 제거, 소문자 변환, 공백 제거"""
-        if name is None:
-            return ""
-        name = regex.sub(r'\b(Team|Gaming|Esports|E-Sports|eSports|-)\b', '', name, flags=regex.IGNORECASE)
-        name = regex.sub(r'[^\w\s]', '', name)
-        return name.lower().strip()
+        """팀 이름 정규화: 특수문자 제거, 소문자 변환, 불용어 제거"""
+        TEAM_STOPWORDS = {'team', 'gaming', 'esports', 'e-sports', 'esport', 'honda', '-', 'e', 'sports'}
+        name = regex.sub(r'[^\w\s]', ' ', name.lower())
+        tokens = name.lower().split()
+        filtered = [t for t in tokens if t not in TEAM_STOPWORDS]
+        return ' '.join(filtered)
 
     def find_best_match(self, team_name, candidate_list, threshold=70):
         best_score = 0
         best_match = None
-
         clean_name = self.clean_team_name(team_name)
+        name_tokens = set(clean_name.split())
 
         for candidate in candidate_list:
             clean_candidate = self.clean_team_name(candidate)
+            candidate_tokens = set(clean_candidate.split())
 
-            # 정확히 일치하는 경우
+            # 정확히 일치
             if clean_name == clean_candidate:
                 return candidate, 100
 
-            # 단어 토큰 기반 비교
+            # 유사도 점수 계산
             token_score = fuzz.token_sort_ratio(clean_name, clean_candidate)
-            # 부분 문자열 비교
             partial_score = fuzz.partial_ratio(clean_name, clean_candidate)
-            # 평균 점수 계산
-            score = (token_score + partial_score) / 2
+            overlap_score = len(name_tokens & candidate_tokens) / max(len(name_tokens | candidate_tokens), 1) * 100
+
+            # 추가: 부분 단어 일치 비율
+            token_match_ratio_1 = len(name_tokens & candidate_tokens) / max(len(name_tokens), 1)
+            token_match_ratio_2 = len(name_tokens & candidate_tokens) / max(len(candidate_tokens), 1)
+            subset_match_score = max(token_match_ratio_1, token_match_ratio_2) * 100
+
+            score = (token_score + partial_score + overlap_score + subset_match_score) / 4
 
             if score > best_score:
                 best_score = score
@@ -1150,13 +1158,12 @@ class Database:
             return None, best_score
 
     def match_team_name(self):
-        oracle_teams_data = self.fetch_all("SELECT DISTINCT teamname FROM oracle_elixir_2024")
-        oracle_teams = [row['teamname'] for row in oracle_teams_data]
+        oracle_teams_data_2025 = self.fetch_all("SELECT DISTINCT teamname FROM oracle_elixir_2025")
+        oracle_teams_data_2024 = self.fetch_all("SELECT DISTINCT teamname FROM oracle_elixir_2024")
+        oracle_teams_2025 = [row['teamname'] for row in oracle_teams_data_2025]
+        oracle_teams_2024 = [row['teamname'] for row in oracle_teams_data_2024]
 
-        if not oracle_teams:
-            self.logger.warning("oracle_elixir_2025 테이블에서 팀 이름을 찾을 수 없습니다.")
-            return
-        team_info_records = self.fetch_all("SELECT seq, official_site_name, official_site_slug FROM team_info")
+        team_info_records = self.fetch_all("SELECT seq, official_site_name, official_site_slug, official_site_code FROM team_info")
 
         if not team_info_records:
             self.logger.warning("team_info 테이블에서 팀 정보를 찾을 수 없습니다.")
@@ -1167,15 +1174,23 @@ class Database:
 
         for team in team_info_records:
             team_seq = team['seq']
-            team_name = team['official_site_name']
-            slug = team['official_site_slug']
-            best_match, score = self.find_best_match(team_name, oracle_teams)
+            official_site_team_name = team['official_site_name']
+            official_site_slug = team['official_site_slug']
+            official_site_code = team['official_site_code']
+            best_match, score = self.find_best_match(official_site_team_name, oracle_teams_2025)
             if best_match is None:
-                best_match, score = self.find_best_match(team_name, slug)
-
+                best_match, score = self.find_best_match(official_site_slug, oracle_teams_2025)
+            if best_match is None:
+                best_match, score = self.find_best_match(official_site_code, oracle_teams_2025)
+            if best_match is None:
+                best_match, score = self.find_best_match(official_site_team_name, oracle_teams_2024)
+            if best_match is None:
+                best_match, score = self.find_best_match(official_site_slug, oracle_teams_2024)
+            if best_match is None:
+                best_match, score = self.find_best_match(official_site_code, oracle_teams_2024)
             mapping_results.append({
                 'team_seq': team_seq,
-                'official_site_name': team_name,
+                'official_site_name': official_site_team_name,
                 'oracle_elixir_team_name': best_match,
                 'match_score': score
             })
@@ -1195,7 +1210,13 @@ class Database:
             print(f"{len(unmatched)}개 팀이 매칭되지 않았습니다.")
             for team in unmatched:
                 print(f"매칭 실패: {team['official_site_name']} (ID: {team['team_seq']})")
-
+        manual_code1 = '''update team_info set oracle_elixir_team_name = "OKSavingsBank BRION Challengers" where official_site_name = "BRO Challengers"'''
+        manual_code2 = '''update team_info set oracle_elixir_team_name = "Nongshim Esports Academy" where official_site_name = "NS Challengers"'''
+        manual_code3 = '''update team_info set oracle_elixir_team_name = "Hanwha Life Esports Challengers" where official_site_name = "HLE Challengers"'''
+        self.cursor.execute(manual_code1)
+        self.cursor.execute(manual_code2)
+        self.cursor.execute(manual_code3)
+        self.commit()
         return mapping_results
 
     def get_all_team_slug(self):
