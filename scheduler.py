@@ -72,7 +72,7 @@ class JobExecutor:
             daily_work_logger = self.log_manager.get_logger("daily_work_logger", LogType.PROGRAM)
             mysql_logger = self.log_manager.get_logger("mysql_logger", LogType.PROGRAM)
             mysql = Database(self.meta_data.db_info["mysql"], self.meta_data, logger=mysql_logger)
-            mongo = MongoDB(self.meta_data.db_info["mysql"])
+            mongo = MongoDB(self.meta_data.db_info["mongo_atlas"])
             try:
                 lol_main = Main(mysql, mongo, self.meta_data, daily_work_logger)
                 lol_main.daily_work()
@@ -139,7 +139,7 @@ class Scheduler:
     def add_jobs(self):
         self.scheduler.add_job(
             self.job_executor.execute_daily_work,
-            #trigger=CronTrigger(hour=self.meta_data.scheduler_info['jobs']['daily_f1_work']['schedule']['hour'], minute=self.meta_data.scheduler_info['jobs']['daily_f1_work']['schedule']['minute']),
+            #trigger=CronTrigger(hour=self.meta_data.scheduler_info['jobs']['daily_work']['schedule']['hour'], minute=self.meta_data.scheduler_info['jobs']['daily_work']['schedule']['minute']),
             trigger=DateTrigger(run_date=datetime.now()),
             id='lol_daily_job',
             name='lol_daily_job',
