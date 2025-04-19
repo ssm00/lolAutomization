@@ -28,7 +28,7 @@ class S3Manager:
                     Prefix=prefix,
                 )
                 if 'Contents' not in response:
-                    return []
+                    continue
                 for obj in response['Contents']:
                     key = obj['Key']
                     parts = key.split('/')
