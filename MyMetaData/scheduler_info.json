@@ -1,0 +1,16 @@
+{
+  "max_threads":10,
+  "max_processes": 5,
+  "jobs": {
+    "daily_work": {
+      "schedule": {
+        "hour": "8",
+        "minute": "30"
+      }
+    },
+    "test_crawling": {
+      "schedule": {
+        "second": "*/30"
+      }
+    }}
+}
