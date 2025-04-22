@@ -23,6 +23,7 @@ class BaseContentProcessor(ABC):
         self.player_dir = base_path / "Assets" / "Image" / "player"
         self.background_dir = base_path / "Assets" / "Image" / "background"
         self.plt_dir = Path(__file__).parent.parent / "PltOutput"
+        self.logo_path = Path(__file__).parent.parent / "Assets" / "Image" / "background" / "logo.png"
 
     def _setup_fonts(self):
         base_path = Path(__file__).parent.parent / "Assets" / "Font"
@@ -97,6 +98,7 @@ class BaseContentProcessor(ABC):
     def convert_to_grayscale(self, image):
         return image.convert('L').convert('RGBA')
 
+    # 일반 내용 숫자나 bullet point 는 금색
     def add_main_text(self, image, text, position, box_size=(990, 700), font_size=50):
         draw = ImageDraw.Draw(image)
         x, y = position
@@ -145,8 +147,8 @@ class BaseContentProcessor(ABC):
             if y > position[1] + box_height:
                 break
         return image
-    
-    #그림자 있는 큰 제목 -> 기획 변경으로 안쓸듯
+
+    #그림자 있는 큰 제목 -> 기획 변경으로 안쓸듯?
     def add_sub_title_text(self, image, text, x=50, y=50):
         draw = ImageDraw.Draw(image)
         font = ImageFont.truetype(self.cafe24_font_path, self.title_font_size)
@@ -378,6 +380,11 @@ class BaseContentProcessor(ABC):
         image.paste(icon, position, icon)
         return image
 
+    def add_logo(self, image):
+        icon = Image.open(self.logo_path)
+        image.paste(icon, (491,1250), icon)
+        return image
+
     def resize_image_by_height(self, image, target_height):
         original_width, original_height = image.size
         ratio = target_height / original_height
@@ -464,3 +471,4 @@ class BaseContentProcessor(ABC):
         player_path = self.get_player_image_path(player_name.lower())
         player_image = Image.open(player_path)
         return self.resize_with_crop_image(player_image, width, height)
+
