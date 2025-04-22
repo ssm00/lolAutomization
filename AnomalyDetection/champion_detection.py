@@ -17,29 +17,22 @@ import matplotlib.pyplot as plt
 """
 class ChampionDetection:
 
-    def __init__(self, database, meta_data):
+    def __init__(self, database, meta_data, patch):
         self.database = database
         self.basic_info = meta_data.basic_info
         self.output_dir = Path(__file__).parent.parent / 'PltOutput'
         self.output_dir.mkdir(exist_ok=True, parents=True)
-        self.patch = self.set_patch_version()
+        self.patch = patch
         self.line_list = ["top","mid","jungle","bottom","support"]
 
-    def set_patch_version(self):
-        if self.basic_info['patch'] == "latest":
-            patch = self.database.get_latest_patch_oracle_elixirs()
-            print(f"패치 버전 세팅 {patch}")
-            return patch
-        else:
-            return self.basic_info['patch']
 
     def run_performance_score(self):
         self.update_performance_score()
-        match_info = self.database.detect_by_performance_score(self.patch)
+        match_info = self.database.detect_by_performance_score(self.patch.version)
 
     def run_two_bottom_choice(self, game_date=None):
-        bottom_champions = self.database.get_only_bottom_champion(self.patch)
-        match_info = self.database.get_all_data_without_team(self.patch, game_date)
+        bottom_champions = self.database.get_only_bottom_champion(self.patch.version)
+        match_info = self.database.get_all_data_without_team(self.patch.version, game_date)
         multi_adc_games = []
         for (gameid, side), team_picks in match_info.groupby(['gameid', 'side']):
             adc_picks = [pick for pick in team_picks.itertuples() if pick.name_us in bottom_champions]
@@ -56,15 +49,15 @@ class ChampionDetection:
         return multi_adc_games
 
     def run_penta_kill(self, game_date=None):
-        penta_kill_list = self.database.get_penta_kill_game_id(self.patch, game_date)
+        penta_kill_list = self.database.get_penta_kill_game_id(self.patch.version, game_date)
         return penta_kill_list
 
     def run_pick_rate(self, game_date=None):
         """
         픽률이 하위 10프로인 챔피언을 픽한 경우 -> 이긴경우
         """
-        position_champions = self.database.get_all_position_pick_rate(self.patch)
-        match_info = self.database.get_all_data_without_team(self.patch, game_date)
+        position_champions = self.database.get_all_position_pick_rate(self.patch.version)
+        match_info = self.database.get_all_data_without_team(self.patch.version, game_date)
         unusual_picks = []
         for index, row in match_info.iterrows():
             position = row['position'].lower()
@@ -141,7 +134,7 @@ class ChampionDetection:
             2. 다른 라인 챔피언 + performance score 가 구린 경우
         """
         for line in self.line_list:
-            df = self.database.get_champion_score_by_line(line, self.patch)
+            df = self.database.get_champion_score_by_line(line, self.patch.version)
             features = ['pick_rate', 'win_rate', 'ban_rate']
             X = df[features].copy()
             performance_score = (
@@ -216,8 +209,8 @@ class ChampionDetection:
         plt.close()
 
     def run_unmatch_line(self, game_date=None):
-        champion_dict_by_line = self.database.get_all_champion_list(self.patch)
-        match_info = self.database.get_all_data_without_team(self.patch, game_date)
+        champion_dict_by_line = self.database.get_all_champion_list(self.patch.version)
+        match_info = self.database.get_all_data_without_team(self.patch.version, game_date)
         off_position_picks = []
         for index, row in match_info.iterrows():
             line = row['position'].lower()
