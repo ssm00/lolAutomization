@@ -9,10 +9,12 @@ from langchain_core.prompts import PromptTemplate
 from Ai.LangChain.response_form import *
 
 class ArticleGenerator:
-    def __init__(self, database, mongo, meta_data):
+
+    def __init__(self, database, mongo, meta_data, patch):
         load_dotenv()
         self.database = database
         self.mongo = mongo
+        self.patch = patch
         self.meta_data = meta_data
         self.prompt = meta_data.prompt
         self.pick_rate_type = meta_data.prompt.get("pick_rate").get("type")
@@ -101,11 +103,7 @@ class ArticleGenerator:
     def generate_first_page_article(self, game_df, player_name, max_chars):
         player_data = game_df[game_df['playername'] == player_name].iloc[0]
         champion_kr_name = self.database.get_name_kr(player_data['name_us'])
-        champion_stats = self.database.get_champion_rate_table(
-            player_data['name_us'],
-            self.meta_data.basic_info.get("patch"),
-            player_data['position']
-        )
+        champion_stats = self.database.get_champion_rate_table(player_data['name_us'], self.patch.version, player_data['position'])
         article_data = {
             "player_name": player_name,
             "champion_name": champion_kr_name,
@@ -271,7 +269,7 @@ class ArticleGenerator:
                 (game_df['position'] == player_data['position']) &
                 (game_df['side'] != player_data['side'])
                 ].iloc[0]
-            patch = self.meta_data.basic_info.get("patch")
+            patch = self.patch.version
             champion_stats = self.database.get_champion_pick_rate_info(
                 player_data['name_us'],
                 patch,
@@ -294,11 +292,10 @@ class ArticleGenerator:
         elif self.pick_rate_type == "short":
             player_data = game_df[game_df['playername'] == player_name].iloc[0]
             template = self.prompt.get("pick_rate").get("short").get("page4")
-            patch = self.meta_data.basic_info.get("patch")
-            champion_stats = self.database.get_champion_pick_rate_info(player_data['name_us'], patch, player_data['position'])
+            champion_stats = self.database.get_champion_pick_rate_info(player_data['name_us'], self.patch.version, player_data['position'])
             line_kr = {"top": "탑", "jungle": "정글", "mid": "미드", "bottom": "원딜", "support": "서포터"}
             template = template.format(
-                patch=patch,
+                patch=self.patch.version,
                 position=line_kr[player_data['position']],
                 champion_kr_name=champion_stats['name_kr'],
                 tier=champion_stats['tier'],
@@ -315,7 +312,7 @@ class ArticleGenerator:
     def generate_fifth_page_article(self, match_id, player_name, max_chars):
         game_df = self.database.get_game_data(match_id)
         player_data = game_df[game_df['playername'] == player_name].iloc[0]
-        counter_info = self.database.get_counter_champion(player_data['name_us'], player_data['position'], self.meta_data.basic_info.get("patch"))
+        counter_info = self.database.get_counter_champion(player_data['name_us'], player_data['position'], self.patch.version)
         player_champion_kr = self.database.get_name_kr(player_data['name_us'])
         top_counters = counter_info.head(3)
         try:
@@ -380,7 +377,7 @@ class ArticleGenerator:
         position_kr_list = {'top': '탑', 'jungle': '정글', 'mid': '미드', 'bottom': '바텀', 'support': '서포터'}
         if detection_type == "general":
             prompt = random.choice(base_prompt)
-            return prompt.format(channel_name="DLK")
+            return prompt.format(channel_name="LS")
         elif detection_type == "unmatch_line":
             position = position_kr_list[game_df[game_df['playername'] == player_name]['position'].iloc[0]]
             name_us = game_df[game_df['playername'] == player_name]['name_us'].iloc[0]
