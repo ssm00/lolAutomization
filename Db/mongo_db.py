@@ -201,6 +201,26 @@ class MongoDB:
             print(f"썸네일 정보 저장 중 오류 발생: {str(e)}")
             return False
 
+    def insert_patch_info_metadata(self, path, patch_version, info_type):
+        insert_query = {
+            "path":str(path),
+            "patch_version":patch_version,
+            "info_type":info_type,
+        }
+        self.db['patch_info_metadata'].insert_one(insert_query)
+
+    def upsert_patch_info_vector(self, path, chunks, vectors):
+        for idx, (chunk, vector) in enumerate(zip(chunks, vectors)):
+            filter_q = {"source": str(path), "chunk_index": idx}
+            update_q = {
+                "$set": {
+                    "text": chunk,
+                    "embedding": vector,
+                    "metadata": {"source": str(path), "chunk_index": idx}
+                }
+            }
+        self.db["patch_info"].update_one(filter_q, update_q, upsert=True)
+
     def close(self):
         if self.client:
             self.client.close()
