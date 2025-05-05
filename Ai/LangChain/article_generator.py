@@ -10,13 +10,14 @@ from Ai.LangChain.response_form import *
 
 class ArticleGenerator:
 
-    def __init__(self, database, mongo, meta_data, patch):
+    def __init__(self, database, mongo, meta_data, patch, rag):
         load_dotenv()
         self.database = database
         self.mongo = mongo
         self.patch = patch
         self.meta_data = meta_data
         self.prompt = meta_data.prompt
+        self.rag = rag
         self.pick_rate_type = meta_data.prompt.get("pick_rate").get("type")
         tracer = LangChainTracer(
             project_name=os.getenv('LANGCHAIN_PROJECT', 'default-project')
@@ -74,6 +75,14 @@ class ArticleGenerator:
             template=self.prompt.get("pick_rate").get("long").get("page5")
         )
 
+        self.fifth_page_template_rag = PromptTemplate(
+            input_variables=[
+                "player_name", "player_champion_kr", "position", "counters", "max_chars", "patch_info"
+            ],
+            partial_variables={"format_instructions": self.parsers['fifth_page'].get_format_instructions()},
+            template=self.prompt.get("pick_rate").get("long").get("page5_rag")
+        )
+
         self.interview_template = PromptTemplate(
             input_variables=[
                 "full_text"
@@ -96,6 +105,7 @@ class ArticleGenerator:
             'third_page': self.third_page_template | self.llm | self.parsers['third_page'],
             'fourth_page': self.fourth_page_template | self.llm | self.parsers['fourth_page'],
             'fifth_page': self.fifth_page_template | self.llm | self.parsers['fifth_page'],
+            'fifth_page_rag': self.fifth_page_template_rag | self.llm | self.parsers['fifth_page'],
             'interview': self.interview_template | self.llm | self.parsers['interview'],
             'interview_title': self.interview_title_template | self.llm | self.parsers['interview_title']
         }
@@ -308,6 +318,37 @@ class ArticleGenerator:
                 ban_rank=champion_stats['ban_rank']
             )
             return template
+
+    def generate_fifth_page_article_rag(self, match_id, player_name, max_chars):
+        game_df = self.database.get_game_data(match_id)
+        player_data = game_df[game_df['playername'] == player_name].iloc[0]
+        counter_info = self.database.get_counter_champion(player_data['name_us'], player_data['position'], self.patch.version)
+        player_champion_kr = self.database.get_name_kr(player_data['name_us'])
+        top_counters = counter_info.head(3)
+        self.rag.vector_search(player_champion_kr, "sky_rocket", self.patch.version)
+        try:
+            article_data = {
+                'player_name': player_name,
+                'player_champion_kr': player_champion_kr,
+                'position': player_data['position'],
+                'max_chars': max_chars,
+                'counters': [
+                    {
+                        'name_kr': row['name_kr'],
+                        'win_rate': row['win_rate'],
+                        'games_played': row['games_played'],
+                        'kda_diff': row['kda_diff'],
+                        'counter_score': row['counter_score'],
+                    }
+                    for _, row in top_counters.iterrows()
+                ]
+            }
+            result = self.chains['fifth_page_rag'].invoke(article_data)
+            return result
+        except Exception as e:
+            print(f"오류 발생 위치: {__file__}, 라인: {e.__traceback__.tb_lineno}")
+            print(f"오류 내용: {str(e)}")
+            return "기사 생성에 실패했습니다."
 
     def generate_fifth_page_article(self, match_id, player_name, max_chars):
         game_df = self.database.get_game_data(match_id)
