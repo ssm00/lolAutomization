@@ -1,12 +1,13 @@
+from langchain.chains.retrieval_qa.base import RetrievalQA
 from langchain_core.tracers import LangChainTracer
 from dotenv import load_dotenv
 import os
 import random
 from langchain_openai import ChatOpenAI
 from langchain_core.output_parsers.json import JsonOutputParser
-
 from langchain_core.prompts import PromptTemplate
 from Ai.LangChain.response_form import *
+from langchain.chains.retrieval import create_retrieval_chain
 
 class ArticleGenerator:
 
@@ -75,12 +76,13 @@ class ArticleGenerator:
             template=self.prompt.get("pick_rate").get("long").get("page5")
         )
 
-        self.fifth_page_template_rag = PromptTemplate(
-            input_variables=[
-                "player_name", "player_champion_kr", "position", "counters", "max_chars", "patch_info"
-            ],
-            partial_variables={"format_instructions": self.parsers['fifth_page'].get_format_instructions()},
-            template=self.prompt.get("pick_rate").get("long").get("page5_rag")
+        self.fifth_page_template_rag_main = PromptTemplate(
+            template="""당신은 리그오브레전드 프로게임 분석 전문가입니다. 
+            다음 문맥을 참고하여 {player_champion_kr} 추천 분석 기사를 {max_chars}자 이내로 작성하십시오. 
+            {context}
+            -----
+            {instruction} 
+            """
         )
 
         self.interview_template = PromptTemplate(
@@ -105,7 +107,6 @@ class ArticleGenerator:
             'third_page': self.third_page_template | self.llm | self.parsers['third_page'],
             'fourth_page': self.fourth_page_template | self.llm | self.parsers['fourth_page'],
             'fifth_page': self.fifth_page_template | self.llm | self.parsers['fifth_page'],
-            'fifth_page_rag': self.fifth_page_template_rag | self.llm | self.parsers['fifth_page'],
             'interview': self.interview_template | self.llm | self.parsers['interview'],
             'interview_title': self.interview_title_template | self.llm | self.parsers['interview_title']
         }
@@ -320,34 +321,57 @@ class ArticleGenerator:
             return template
 
     def generate_fifth_page_article_rag(self, match_id, player_name, max_chars):
+        # ---------- 1. 데이터 전처리 ----------
         game_df = self.database.get_game_data(match_id)
-        player_data = game_df[game_df['playername'] == player_name].iloc[0]
-        counter_info = self.database.get_counter_champion(player_data['name_us'], player_data['position'], self.patch.version)
-        player_champion_kr = self.database.get_name_kr(player_data['name_us'])
-        top_counters = counter_info.head(3)
-        self.rag.vector_search(player_champion_kr, "sky_rocket", self.patch.version)
-        try:
-            article_data = {
-                'player_name': player_name,
-                'player_champion_kr': player_champion_kr,
-                'position': player_data['position'],
-                'max_chars': max_chars,
-                'counters': [
-                    {
-                        'name_kr': row['name_kr'],
-                        'win_rate': row['win_rate'],
-                        'games_played': row['games_played'],
-                        'kda_diff': row['kda_diff'],
-                        'counter_score': row['counter_score'],
-                    }
-                    for _, row in top_counters.iterrows()
-                ]
+        player_row = game_df[game_df["playername"] == player_name].iloc[0]
+
+        counter_df = self.database.get_counter_champion(
+            player_row["name_us"], player_row["position"], self.patch.version
+        )
+        top_counters = counter_df.head(3)
+
+        player_champion_kr = self.database.get_name_kr(player_row["name_us"])
+
+        counters_payload = [
+            {
+                "name_kr": r["name_kr"],
+                "win_rate": r["win_rate"],
+                "games_played": r["games_played"],
+                "kda_diff": r["kda_diff"],
+                "counter_score": r["counter_score"],
             }
-            result = self.chains['fifth_page_rag'].invoke(article_data)
-            return result
+            for _, r in top_counters.iterrows()
+        ]
+
+        # ---------- 2. RAG 체인 준비 ----------
+        retriever = self.rag.build_retriever(
+            champion=player_champion_kr,
+            info_type="sky_rocket",
+            patch_version=self.patch.version,
+        )
+
+        # fifth_page_template_rag_main 안에 반드시 {context} 변수가 있어야 합니다.
+        combine_docs_chain = self.fifth_page_template_rag_main | self.llm
+
+        patch_info_chain = create_retrieval_chain(
+            retriever=retriever,
+            combine_docs_chain=combine_docs_chain,
+        )
+
+        payload = {
+            "query": f"{player_champion_kr} 버프 분석",
+            "player_name": player_name,
+            "player_champion_kr": player_champion_kr,
+            "position": player_row["position"],
+            "max_chars": max_chars,
+            "counters": counters_payload,
+        }
+
+        try:
+            result = patch_info_chain.invoke(payload)
+            return result["answer"]
         except Exception as e:
-            print(f"오류 발생 위치: {__file__}, 라인: {e.__traceback__.tb_lineno}")
-            print(f"오류 내용: {str(e)}")
+            print(f"오류 위치: {e.__traceback__.tb_lineno}, 내용: {e}")
             return "기사 생성에 실패했습니다."
 
     def generate_fifth_page_article(self, match_id, player_name, max_chars):
