@@ -76,15 +76,6 @@ class ArticleGenerator:
             template=self.prompt.get("pick_rate").get("long").get("page5")
         )
 
-        self.fifth_page_template_rag_main = PromptTemplate(
-            template="""당신은 리그오브레전드 프로게임 분석 전문가입니다. 
-            다음 문맥을 참고하여 {player_champion_kr} 추천 분석 기사를 {max_chars}자 이내로 작성하십시오. 
-            {context}
-            -----
-            {instruction} 
-            """
-        )
-
         self.interview_template = PromptTemplate(
             input_variables=[
                 "full_text"
@@ -321,7 +312,6 @@ class ArticleGenerator:
             return template
 
     def generate_fifth_page_article_rag(self, match_id, player_name, max_chars):
-        # ---------- 1. 데이터 전처리 ----------
         game_df = self.database.get_game_data(match_id)
         player_row = game_df[game_df["playername"] == player_name].iloc[0]
 
@@ -343,19 +333,26 @@ class ArticleGenerator:
             for _, r in top_counters.iterrows()
         ]
 
-        # ---------- 2. RAG 체인 준비 ----------
         retriever = self.rag.build_retriever(
             champion=player_champion_kr,
             info_type="sky_rocket",
             patch_version=self.patch.version,
         )
+        fifth_page_template_rag_main = PromptTemplate(
+            template="""당신은 리그오브레전드 프로게임 분석 전문가입니다. 
+                    다음 문맥을 참고하여 {player_champion_kr} 추천 분석 기사를 {max_chars}자 이내로 작성하십시오. 
+                    {context}
+                    -----
+                    {instruction} 
+                    """
+        )
 
-        # fifth_page_template_rag_main 안에 반드시 {context} 변수가 있어야 합니다.
-        combine_docs_chain = self.fifth_page_template_rag_main | self.llm
+        combine_docs_chain = fifth_page_template_rag_main | self.llm
 
         patch_info_chain = create_retrieval_chain(
             retriever=retriever,
             combine_docs_chain=combine_docs_chain,
+            input_key="query"
         )
 
         payload = {
@@ -367,12 +364,8 @@ class ArticleGenerator:
             "counters": counters_payload,
         }
 
-        try:
-            result = patch_info_chain.invoke(payload)
-            return result["answer"]
-        except Exception as e:
-            print(f"오류 위치: {e.__traceback__.tb_lineno}, 내용: {e}")
-            return "기사 생성에 실패했습니다."
+        result = patch_info_chain.invoke(payload)
+        return result["answer"]
 
     def generate_fifth_page_article(self, match_id, player_name, max_chars):
         game_df = self.database.get_game_data(match_id)
