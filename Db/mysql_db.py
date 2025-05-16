@@ -440,10 +440,17 @@ class Database:
         select_query = "select name_kr from champion_info where ps_name = (%s)"
         return self.fetch_one(select_query, args=name_us)['name_kr']
 
+    def get_name_kr_list(self):
+        select_query = "select name_kr from champion_info"
+        res = [record.get('name_kr') for record in self.fetch_all(select_query)]
+        return res
+
     def get_champion_rate_table(self, name_us, patch, position):
         select_query = f"select name_us, pick_rate, win_rate, ban_rate, champion_tier from champion_score_{position} where name_us = (%s) and patch = (%s) "
         result = self.fetch_one(select_query, args=(name_us, patch))
         position_kr = {"top":"탑", "jungle":"정글", "mid":"미드", "bottom":"바텀", "support":"서포터"}
+        print(name_us, patch)
+        print(result)
         champion_stats = {
             "라인": position_kr[position],
             "티어": result['champion_tier'],
@@ -1246,3 +1253,15 @@ class Database:
         if find_game is None:
             return None
         return find_game.get("gameid")
+
+    def update_ps_name(self, data_info):
+        for champion_data in data_info['data']:
+            insert_query = "insert ignore into champion_info (name_kr, ps_name) values (%s, %s) "
+            values = (champion_data['nameKr'], champion_data['nameUs'])
+            self.cursor.execute(insert_query, values)
+            self.commit()
+        update_query = """UPDATE champion_info ci JOIN oracle_elixir_2025 oe ON ci.ps_name = oe.name_us SET ci.oracle_elixir_name = oe.name_us WHERE ci.oracle_elixir_name IS NULL"""
+        self.cursor.execute(update_query)
+        self.commit()
+
+
