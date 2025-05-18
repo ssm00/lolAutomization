@@ -7,18 +7,18 @@ from langchain_openai import ChatOpenAI
 from langchain_core.output_parsers.json import JsonOutputParser
 from langchain_core.prompts import PromptTemplate
 from Ai.LangChain.response_form import *
-from langchain.chains.retrieval import create_retrieval_chain
+from Ai.LangChain.lang_graph import LangGraph
 
 class ArticleGenerator:
 
-    def __init__(self, database, mongo, meta_data, patch, rag):
+    def __init__(self, database, mongo, meta_data, patch):
         load_dotenv()
         self.database = database
         self.mongo = mongo
         self.patch = patch
         self.meta_data = meta_data
         self.prompt = meta_data.prompt
-        self.rag = rag
+        self.lang_graph = LangGraph(mongo, database, meta_data, self.patch)
         self.pick_rate_type = meta_data.prompt.get("pick_rate").get("type")
         tracer = LangChainTracer(
             project_name=os.getenv('LANGCHAIN_PROJECT', 'default-project')
@@ -312,60 +312,7 @@ class ArticleGenerator:
             return template
 
     def generate_fifth_page_article_rag(self, match_id, player_name, max_chars):
-        game_df = self.database.get_game_data(match_id)
-        player_row = game_df[game_df["playername"] == player_name].iloc[0]
-
-        counter_df = self.database.get_counter_champion(
-            player_row["name_us"], player_row["position"], self.patch.version
-        )
-        top_counters = counter_df.head(3)
-
-        player_champion_kr = self.database.get_name_kr(player_row["name_us"])
-
-        counters_payload = [
-            {
-                "name_kr": r["name_kr"],
-                "win_rate": r["win_rate"],
-                "games_played": r["games_played"],
-                "kda_diff": r["kda_diff"],
-                "counter_score": r["counter_score"],
-            }
-            for _, r in top_counters.iterrows()
-        ]
-
-        retriever = self.rag.build_retriever(
-            champion=player_champion_kr,
-            info_type="sky_rocket",
-            patch_version=self.patch.version,
-        )
-        fifth_page_template_rag_main = PromptTemplate(
-            template="""당신은 리그오브레전드 프로게임 분석 전문가입니다. 
-                    다음 문맥을 참고하여 {player_champion_kr} 추천 분석 기사를 {max_chars}자 이내로 작성하십시오. 
-                    {context}
-                    -----
-                    {instruction} 
-                    """
-        )
-
-        combine_docs_chain = fifth_page_template_rag_main | self.llm
-
-        patch_info_chain = create_retrieval_chain(
-            retriever=retriever,
-            combine_docs_chain=combine_docs_chain,
-            input_key="query"
-        )
-
-        payload = {
-            "query": f"{player_champion_kr} 버프 분석",
-            "player_name": player_name,
-            "player_champion_kr": player_champion_kr,
-            "position": player_row["position"],
-            "max_chars": max_chars,
-            "counters": counters_payload,
-        }
-
-        result = patch_info_chain.invoke(payload)
-        return result["answer"]
+        self.lang_graph.run_page5_article_rag(match_id, player_name, max_chars)
 
     def generate_fifth_page_article(self, match_id, player_name, max_chars):
         game_df = self.database.get_game_data(match_id)
