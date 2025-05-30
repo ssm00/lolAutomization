@@ -121,7 +121,7 @@ class PltDraw:
         ])
         df_filtered = df[df['name_us'] != name_us]
         top_9 = df_filtered.nlargest(9, 'Pick Rate')
-
+        unusual_data = None
         for champ_name, champ_info in champ_data.items():
             if champ_name == name_us:
                 unusual_data = pd.DataFrame([{
@@ -129,9 +129,14 @@ class PltDraw:
                     'name_kr': champ_info['name_kr'],
                     'Pick Rate': champ_info['pick_rate']
                 }])
-
+        # 고인챔 처리
+        if unusual_data is None:
+            unusual_data = pd.DataFrame([{
+                'name_us': name_us,
+                'name_kr': self.database.get_name_kr(name_us),
+                'Pick Rate': 0
+            }])
         final_df = pd.concat([top_9, unusual_data])
-
         fig, ax = plt.subplots(figsize=(10.8, 10.8))
 
         ax.set_facecolor('none')

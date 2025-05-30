@@ -40,6 +40,10 @@ class S3Manager:
                         'name': file_name,
                         'url': url
                     })
+            #정렬
+            for category in image_list:
+                for article_id in image_list[category]:
+                    image_list[category][article_id].sort(key=lambda x: int(x['name'].split('.')[0]))
             return image_list
         except ClientError as e:
             print(f"S3 List Error: {e}")
@@ -51,7 +55,6 @@ class S3Manager:
     def get_article_images(self, article_id, article_type, date_str):
         try:
             prefix = f"{article_type}/{date_str}/{article_id}/"
-            print(prefix)
             response = self.s3.list_objects_v2(
                 Bucket=self.bucket,
                 Prefix=prefix

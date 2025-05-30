@@ -6,7 +6,7 @@ import pymysql
 import pandas as pd
 from datetime import datetime, date
 from fuzzywuzzy import fuzz
-
+from util.commonException import CommonError,ErrorCode
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(os.path.dirname(__file__)))))
 
 class Database:
@@ -60,7 +60,7 @@ class Database:
         columns = ', '.join(df.columns)
         placeholders = ', '.join(['%s'] * len(df.columns))
         insert_query = f"""
-                            INSERT INTO oracle_elixir_{self.year} ({columns})
+                            INSERT IGNORE INTO oracle_elixir_{self.year} ({columns})
                             VALUES ({placeholders})
                         """
         for index, row in df.iterrows():
@@ -140,8 +140,9 @@ class Database:
                         patch,
                         survey_target_tier,
                         region,
-                        updated_at)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                        updated_at,
+                        position)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     ON DUPLICATE KEY UPDATE 
                         name_us = VALUES(name_us),
                         name_kr = VALUES(name_kr),
@@ -158,8 +159,12 @@ class Database:
                         patch = VALUES(patch),
                         survey_target_tier = VALUES(survey_target_tier),
                         region = VALUES(region),
-                        updated_at = VALUES(updated_at)
+                        updated_at = VALUES(updated_at),
+                        position = VALUES(position)
                 """
+                line_id = {0:"top",1:"jungle",2:"mid",3:"bottom",4:"support"}
+                if line == "all":
+                    line = line_id[data.get("laneId")]
                 updated_at = datetime.strptime(data.get("updatedAt"), "%Y-%m-%dT%H:%M:%S.%fZ").strftime("%Y-%m-%d %H:%M:%S")
                 values = [
                     data.get("championInfo").get("nameUs"),
@@ -177,7 +182,8 @@ class Database:
                     patch,
                     survey_target_tier,
                     region,
-                    updated_at
+                    updated_at,
+                    line
                     ]
                 self.cursor.execute(insert_query, values)
             self.commit()
@@ -446,13 +452,25 @@ class Database:
         return res
 
     def get_champion_rate_table(self, name_us, patch, position):
-        select_query = f"select name_us, pick_rate, win_rate, ban_rate, champion_tier from champion_score_{position} where name_us = (%s) and patch = (%s) "
+        # unmatch_line일때 체크
+        check_query = self.fetch_one(f"select * from champion_score_{position} where name_us = %s and patch = %s",args=(name_us, patch))
+        if check_query is None:
+            position = "all"
+        select_query = f"select name_us, pick_rate, win_rate, ban_rate, champion_tier,position from champion_score_{position} where name_us = (%s) and patch = (%s) "
         result = self.fetch_one(select_query, args=(name_us, patch))
+        # 모든 라인에서 고인인 경우
+        if result is None:
+            return {
+                "라인": "-",
+                "티어": "-",
+                "승률": "-",
+                "픽률": "-",
+                "밴률": "-"
+            }
+
         position_kr = {"top":"탑", "jungle":"정글", "mid":"미드", "bottom":"바텀", "support":"서포터"}
-        print(name_us, patch)
-        print(result)
         champion_stats = {
-            "라인": position_kr[position],
+            "라인": position_kr[result['position']],
             "티어": result['champion_tier'],
             "승률": result['win_rate'],
             "픽률": result['pick_rate'],
@@ -461,6 +479,10 @@ class Database:
         return champion_stats
 
     def get_champion_pick_rate_info(self, name_us, patch, position):
+        #unmatch_line일때 체크
+        check_query = self.fetch_one(f"select * from champion_score_{position} where name_us = %s and patch = %s", args=(name_us, patch))
+        if check_query is None:
+            position = "all"
         select_query = f"""
         select name_kr, ranking, pick_rate, win_rate, ban_rate, champion_tier,
          (SELECT COUNT(*) FROM champion_score_{position} WHERE patch = %s) as total_champion_count, 
@@ -469,6 +491,9 @@ class Database:
          (select COUNT(*) + 1 FROM champion_score_{position} c2 WHERE c2.ban_rate > c1.ban_rate AND patch = %s) as ban_rank 
          from champion_score_{position} c1 where name_us = %s and patch = %s """
         result = self.fetch_one(select_query, args=(patch, patch, patch, patch, name_us, patch))
+        # 전체, 특정라인에서 안나오면 고인임.
+        if result is None:
+            raise CommonError(ErrorCode.DEAD_CHAMPION, "Dead Champion")
         champion_stats = {
             "position": position,
             "name_kr": result['name_kr'],
@@ -1212,11 +1237,14 @@ class Database:
                 update_count += 1
         self.connection.commit()
         print(f"총 {len(team_info_records)}개 팀 중 {update_count}개 팀 매칭 완료")
+        self.logger.info(f"총 {len(team_info_records)}개 팀 중 {update_count}개 팀 매칭 완료")
         unmatched = [result for result in mapping_results if result['oracle_elixir_team_name'] is None]
         if unmatched:
             print(f"{len(unmatched)}개 팀이 매칭되지 않았습니다.")
+            self.logger.info(f"{len(unmatched)}개 팀이 매칭되지 않았습니다.")
             for team in unmatched:
                 print(f"매칭 실패: {team['official_site_name']} (ID: {team['team_seq']})")
+                self.logger.info(f"매칭 실패: {team['official_site_name']} (ID: {team['team_seq']})")
         manual_code1 = '''update team_info set oracle_elixir_team_name = "OKSavingsBank BRION Challengers" where official_site_name = "BRO Challengers"'''
         manual_code2 = '''update team_info set oracle_elixir_team_name = "Nongshim Esports Academy" where official_site_name = "NS Challengers"'''
         manual_code3 = '''update team_info set oracle_elixir_team_name = "Hanwha Life Esports Challengers" where official_site_name = "HLE Challengers"'''
@@ -1236,6 +1264,7 @@ class Database:
         if result is not None:
             return result.get("official_site_slug")
         else:
+            self.logger.info(f"팀 아이콘 정보 없음 : {oracle_elixir_team_name}")
             print(f"팀 아이콘 정보 없음 : {oracle_elixir_team_name}")
 
     def find_game_id_by_title_info(self, title_info):

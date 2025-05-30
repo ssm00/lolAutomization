@@ -8,6 +8,7 @@ from langchain_core.output_parsers.json import JsonOutputParser
 from langchain_core.prompts import PromptTemplate
 from Ai.LangChain.response_form import *
 from Ai.LangChain.lang_graph import LangGraph
+from util.commonException import CommonError,ErrorCode
 
 class ArticleGenerator:
 
@@ -265,54 +266,54 @@ class ArticleGenerator:
 
 
     def generate_fourth_page_article(self, game_df, player_name, max_chars):
-        if self.pick_rate_type == "long":
-            player_data = game_df[game_df['playername'] == player_name].iloc[0]
-            opp_player_data = game_df[
-                (game_df['position'] == player_data['position']) &
-                (game_df['side'] != player_data['side'])
-                ].iloc[0]
-            patch = self.patch.version
-            champion_stats = self.database.get_champion_pick_rate_info(
-                player_data['name_us'],
-                patch,
-                player_data['position']
-            )
-            line_kr = {"top":"탑", "jungle":"정글", "mid":"미드", "bottom":"원딜", "support":"서포터", }
-            article_data = {"champion_kr_name": champion_stats['name_kr'],
-                            "position": line_kr[player_data['position']],
-                            "tier": champion_stats['tier'],
-                            "pick_rate": champion_stats['pick_rate'],
-                            "ban_rate": champion_stats['ban_rate'],
-                            "win_rate": champion_stats['win_rate'],
-                            "ranking": champion_stats['ranking'],
-                            "patch": patch,
-                            "opponent_champion": self.database.get_name_kr(opp_player_data['name_us']),
-                            "max_chars": max_chars
-                            }
-            result = self.chains['fourth_page'].invoke(article_data)
-            return result['text']
-        elif self.pick_rate_type == "short":
-            player_data = game_df[game_df['playername'] == player_name].iloc[0]
-            template = self.prompt.get("pick_rate").get("short").get("page4")
-            champion_stats = self.database.get_champion_pick_rate_info(player_data['name_us'], self.patch.version, player_data['position'])
-            line_kr = {"top": "탑", "jungle": "정글", "mid": "미드", "bottom": "원딜", "support": "서포터"}
-            template = template.format(
-                patch=self.patch.version,
-                position=line_kr[player_data['position']],
-                champion_kr_name=champion_stats['name_kr'],
-                tier=champion_stats['tier'],
-                total_champion_count=champion_stats['total_champion_count'],
-                pick_rate=champion_stats['pick_rate'],
-                pick_rank=champion_stats['pick_rank'],
-                win_rate=champion_stats['win_rate'],
-                win_rank=champion_stats['win_rank'],
-                ban_rate=champion_stats['ban_rate'],
-                ban_rank=champion_stats['ban_rank']
-            )
-            return template
+        try:
+            if self.pick_rate_type == "long":
+                player_data = game_df[game_df['playername'] == player_name].iloc[0]
+                opp_player_data = game_df[
+                    (game_df['position'] == player_data['position']) &
+                    (game_df['side'] != player_data['side'])
+                    ].iloc[0]
+                patch = self.patch.version
+                champion_stats = self.database.get_champion_pick_rate_info(player_data['name_us'],patch,player_data['position'])
+                line_kr = {"top":"탑", "jungle":"정글", "mid":"미드", "bottom":"원딜", "support":"서포터", }
+                article_data = {"champion_kr_name": champion_stats['name_kr'],
+                                "position": line_kr[player_data['position']],
+                                "tier": champion_stats['tier'],
+                                "pick_rate": champion_stats['pick_rate'],
+                                "ban_rate": champion_stats['ban_rate'],
+                                "win_rate": champion_stats['win_rate'],
+                                "ranking": champion_stats['ranking'],
+                                "patch": patch,
+                                "opponent_champion": self.database.get_name_kr(opp_player_data['name_us']),
+                                "max_chars": max_chars
+                                }
+                result = self.chains['fourth_page'].invoke(article_data)
+                return result['text']
+            elif self.pick_rate_type == "short":
+                player_data = game_df[game_df['playername'] == player_name].iloc[0]
+                template = self.prompt.get("pick_rate").get("short").get("page4")
+                champion_stats = self.database.get_champion_pick_rate_info(player_data['name_us'], self.patch.version, player_data['position'])
+                line_kr = {"top": "탑", "jungle": "정글", "mid": "미드", "bottom": "원딜", "support": "서포터"}
+                template = template.format(
+                    patch=self.patch.version,
+                    position=line_kr[player_data['position']],
+                    champion_kr_name=champion_stats['name_kr'],
+                    tier=champion_stats['tier'],
+                    total_champion_count=champion_stats['total_champion_count'],
+                    pick_rate=champion_stats['pick_rate'],
+                    pick_rank=champion_stats['pick_rank'],
+                    win_rate=champion_stats['win_rate'],
+                    win_rank=champion_stats['win_rank'],
+                    ban_rate=champion_stats['ban_rate'],
+                    ban_rank=champion_stats['ban_rank']
+                )
+                return template
+        except CommonError as e:
+            if e.error_code == ErrorCode.DEAD_CHAMPION:
+                return "ㆍ 이 챔피언은 너무 고인이라 (마스터+) 통계가 존재하지 않습니다..."
 
     def generate_fifth_page_article_rag(self, match_id, player_name, max_chars):
-        self.lang_graph.run_page5_article_rag(match_id, player_name, max_chars)
+        return self.lang_graph.run_page5_article_rag(match_id, player_name, max_chars)
 
     def generate_fifth_page_article(self, match_id, player_name, max_chars):
         game_df = self.database.get_game_data(match_id)
@@ -382,7 +383,7 @@ class ArticleGenerator:
         position_kr_list = {'top': '탑', 'jungle': '정글', 'mid': '미드', 'bottom': '바텀', 'support': '서포터'}
         if detection_type == "general":
             prompt = random.choice(base_prompt)
-            return prompt.format(channel_name="LS")
+            return prompt
         elif detection_type == "unmatch_line":
             position = position_kr_list[game_df[game_df['playername'] == player_name]['position'].iloc[0]]
             name_us = game_df[game_df['playername'] == player_name]['name_us'].iloc[0]

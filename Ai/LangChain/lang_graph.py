@@ -19,6 +19,7 @@ class RAGState(TypedDict):
     documents: List[Document]
     final_response: dict
     champion: str
+    patch_version: str
 
 class LangGraph:
 
@@ -51,19 +52,21 @@ class LangGraph:
         chain = PromptTemplate.from_template(system_prompt + "\n{original_prompt}") | llm
         query = chain.invoke({"original_prompt": state["original_prompt"]}).content.strip()
         state["query"] = query
-        print("반환된 쿼리임", query)
+        print(query)
+        print(state["champion"])
         return state
 
     def retrieve_documents(self, state: RAGState) -> RAGState:
         docs = self.vector_store.similarity_search(
             query=state["query"],
-            k=3,
+            k=5,
             pre_filter={
                 "champion": state["champion"],
-                "patch_version": str(self.patch.version)
+                "patch_version": str(state["patch_version"])
             }
         )
         state["documents"] = docs
+        print(docs)
         return state
 
     def generate_response(self, state: RAGState) -> RAGState:
@@ -89,18 +92,19 @@ class LangGraph:
         graph.add_node("retriever", RunnableLambda(self.retrieve_documents))
         graph.add_node("generate", RunnableLambda(self.generate_response))
         graph.add_node("output", RunnableLambda(self.output_node))
-        # 흐름 정의
+        # 흐름
         graph.set_entry_point("rewrite_query")
         graph.add_edge("rewrite_query", "retriever")
         graph.add_edge("retriever", "generate")
         graph.add_edge("generate", "output")
         graph.set_finish_point("output")
         app = graph.compile()
-        #----------------------------------------
+        # 인게임 데이터----------------------------------------
         prompt_template = PromptTemplate.from_template(self.prompt.get("pick_rate").get("long").get("page5_rag"))
         game_df = self.database.get_game_data(match_id)
         player_data = game_df[game_df["playername"] == player_name].iloc[0]
-        counter_df = self.database.get_counter_champion(player_data["name_us"], player_data["position"], self.patch.version)
+        patch_version = game_df["patch"].iloc[0]
+        counter_df = self.database.get_counter_champion(player_data["name_us"], player_data["position"], patch_version)
         top_counters = counter_df.head(3)
         line_kr = {"top": "탑", "jungle": "정글", "mid": "미드", "bottom": "원딜", "support": "서포터", }
         player_champion_kr = self.database.get_name_kr(player_data["name_us"])
@@ -120,5 +124,5 @@ class LangGraph:
             max_chars=max_chars,
             counters=counters_payload,
         )
-        response = app.invoke({"original_prompt": original_prompt,"champion": player_champion_kr})
+        response = app.invoke({"original_prompt": original_prompt,"champion": player_champion_kr, "patch_version":patch_version})
         return response['final_response']
